@@ -1,0 +1,14 @@
+# データ・サンプルは公開リポジトリに含めない（企画データは社内共有フォルダのJSONに保存）
+*.xlsx
+*.xlsm
+*.pdf
+*.json
+
+# Claude Code / エディタ等のローカル設定
+.claude/
+.vscode/
+.cursor/
+
+# OS
+.DS_Store
+Thumbs.db

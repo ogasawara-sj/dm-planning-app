@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DM企画サマリー</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" />
+  <link rel="stylesheet" href="css/styles.css?v=6" />
+</head>
+<body class="readonly">
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">📮</span>
+      <div>
+        <div class="brand-title">DM企画サマリー</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button id="connectBtn" class="btn ghost" title="社内共有フォルダに接続">📁 共有フォルダに接続</button>
+      <span id="folderStatus" class="folder-status">未接続</span>
+      <label class="user-field">お名前
+        <input id="userName" placeholder="例：担当者名" />
+      </label>
+    </div>
+  </header>
+
+  <div class="monthbar">
+    <label>対象月
+      <select id="monthSelect"></select>
+    </label>
+    <button id="newMonthBtn" class="btn">＋ 新規月</button>
+    <span id="planTitle" class="plan-title"></span><span class="title-auto-badge">タイトル自動</span>
+    <span id="savedAt" class="saved-at">未保存</span>
+    <div class="spacer"></div>
+    <button id="editBtn" class="btn primary" disabled>編集を開始</button>
+    <button id="saveBtn" class="btn accent" disabled>💾 保存</button>
+  </div>
+
+  <div id="lockBar" class="lockbar idle">月を選ぶか新規作成してください</div>
+
+  <div id="summary" class="summary"></div>
+
+  <main id="board" class="board"></main>
+
+  <div id="drawerScrim" class="drawer-scrim"></div>
+  <aside id="drawer" class="drawer" aria-label="リスト条件">
+    <div class="drawer-head">
+      <div style="min-width:0">
+        <div class="drawer-kicker">リスト条件</div>
+        <div class="drawer-h-title"></div>
+      </div>
+      <button id="drawerClose" class="iconbtn" title="閉じる">✕</button>
+    </div>
+    <div id="drawerBody" class="drawer-body"></div>
+  </aside>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="js/masters.js?v=6"></script>
+  <script src="js/storage.js?v=6"></script>
+  <script src="js/app.js?v=6"></script>
+</body>
+</html>
