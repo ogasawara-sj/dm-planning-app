@@ -9,7 +9,7 @@
     user: localStorage.getItem("dmplan:user") || "",
     month: null, model: null, mtime: 0, editing: false, pollTimer: null,
     drawerId: null, sort: { field: "", dir: "asc" }, filters: {}, dragId: null, dragKey: null,
-    expanded: {},
+    expanded: {}, codeEdit: {},
   };
   const uid = () => "m" + Math.random().toString(36).slice(2, 9);
 
@@ -205,7 +205,7 @@
     { t: "P3/List", title: "P3/List", f: "p3", type: "num" },
     { t: "優先", f: "priority", type: "num" },
     { t: "件数", title: "想定件数", f: "estimatedCount", type: "num" },
-    { t: "素材コード（正式名の候補）" }, { t: "テスト検証" }, { t: "→ 正式名候補（編集可）" },
+    { t: "素材コード", title: "素材コード（正式名の候補）。普段は折りたたみ、鉛筆で編集" }, { t: "テスト検証" }, { t: "→ 正式名候補（編集可）" },
     { t: "リスト条件" }, { t: "" },
   ];
   function passFilters(m) {
@@ -395,17 +395,29 @@
   function renderCodeCell(cell, m) {
     cell.innerHTML = "";
     const confirmed = m.codeStatus === "確定";
-    cell.className = "c-code " + (confirmed ? "code-ok" : "code-pend");   // 未確定はグレー表示
     const prefix = window.prefixOfCategory(m.category);
+    const has = m.num !== "" && m.num != null;
+    cell.className = "c-code " + (confirmed ? "code-ok" : "code-pend") + (state.codeEdit[m.id] ? " editing" : "");
+    if (!state.codeEdit[m.id]) {
+      // 普段は非表示（コードだけコンパクト表示）＋鉛筆で展開
+      cell.append(el("span", { class: "codeval " + (confirmed ? "ok" : "pend") }, has ? window.buildMaterialCode(prefix, m.num) : "未確定"));
+      const ed = el("button", { class: "iconbtn code-edit", title: "素材コードを編集（カテゴリ・番号・確定）" }); ed.append(icon("pencil"));
+      ed.addEventListener("click", () => { if (!state.editing) return; state.codeEdit[m.id] = true; renderCodeCell(cell, m); });
+      cell.append(ed);
+      return;
+    }
+    // 展開：カテゴリ＋番号＋コード＋確定トグル＋閉じる
     cell.append(pick(m, "category", M.categories.map(c => ({ value: c.key, label: c.key })), { class: "w-cat" }));
     cell.append(field(m, "num", { class: "w-num", type: "number", min: "1", placeholder: "180" }));
-    const has = m.num !== "" && m.num != null;
     cell.append(el("span", { class: "codeval " + (confirmed ? "ok" : "pend") }, has ? window.buildMaterialCode(prefix, m.num) : "—"));
-    const on = m.codeStatus === "確定";
+    const on = confirmed;
     const tog = el("button", { class: "ministat " + (on ? "ok" : "pend"), title: "素材コード：" + (on ? "確定" : "未確定") + "（クリックで切替）" });
     tog.append(icon(on ? "circle-check" : "circle-dashed"));
     tog.addEventListener("click", () => { if (!state.editing) return; m.codeStatus = on ? "未確定" : "確定"; rerenderRow(sectionOf(m), m); renderSummary(); });
     cell.append(tog);
+    const close = el("button", { class: "iconbtn code-edit", title: "閉じる" }); close.append(icon("check"));
+    close.addEventListener("click", () => { state.codeEdit[m.id] = false; renderCodeCell(cell, m); });
+    cell.append(close);
   }
   // テスト検証：RO等は「—」、テストは必ず OK / NG
   function renderCmpCell(cell, m) {
