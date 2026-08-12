@@ -160,21 +160,28 @@
   // ============ Header / month ============
   function renderHeader() {
     $("#folderStatus").textContent = S.isConnected() ? S.folderName()
-      : (S.supported ? "お試し中（この端末に一時保存）" : "フォルダ直結 非対応ブラウザ");
-    $("#folderStatus").className = "folder-status " + (S.isConnected() ? "on" : "");
+      : (S.supported ? "未接続（共有フォルダに接続してください）" : "フォルダ直結 非対応ブラウザ（Edge/Chrome推奨）");
+    $("#folderStatus").className = "folder-status " + (S.isConnected() ? "on" : "off");
     $("#userName").value = state.user;
   }
   async function renderMonthSelect() {
-    const sel = $("#monthSelect"); const months = await S.listMonths();
-    sel.innerHTML = "";
+    const sel = $("#monthSelect"); sel.innerHTML = "";
+    if (!S.isConnected()) { sel.append(el("option", { value: "" }, "（未接続）")); return; }
+    const months = await S.listMonths();
     if (!months.length) sel.append(el("option", { value: "" }, "（データなし）"));
     months.forEach(m => sel.append(el("option", { value: m }, window.monthLabel(m))));
     if (state.month && months.includes(state.month)) sel.value = state.month;
   }
   async function renderLockBar() {
-    const bar = $("#lockBar"); const lock = state.month ? await S.readLock(state.month) : null;
+    const bar = $("#lockBar"); const btn = $("#editBtn"), save = $("#saveBtn");
+    // 本番運用：共有フォルダ未接続なら編集不可
+    if (!S.isConnected()) {
+      bar.className = "lockbar locked"; bar.innerHTML = ""; bar.append(icon("folder"), " 右上「共有フォルダに接続」で共有フォルダを選ぶと、閲覧・編集できます");
+      btn.textContent = "編集を開始"; btn.disabled = true; save.disabled = true;
+      document.body.classList.add("readonly"); return;
+    }
+    const lock = state.month ? await S.readLock(state.month) : null;
     const mine = lock && lock.user === state.user;
-    const btn = $("#editBtn"), save = $("#saveBtn");
     btn.disabled = false;
     if (state.editing) { bar.className = "lockbar editing"; bar.innerHTML = ""; bar.append(icon("pencil"), " あなたが編集中（保存すると全員へ反映）"); btn.textContent = "編集を終了"; save.disabled = false; }
     else if (lock && !mine) { bar.className = "lockbar locked"; bar.innerHTML = ""; bar.append(icon("lock"), ` ${lock.user} さんが編集中（閲覧のみ・自動更新）`); btn.textContent = "編集を開始"; btn.disabled = true; save.disabled = true; }
@@ -664,7 +671,8 @@
 
   function renderBody() {
     const root = $("#board"); root.innerHTML = "";
-    if (!state.model) { root.append(el("div", { class: "placeholder" }, "月を選ぶか「＋ 新規月」で作成してください。")); return; }
+    if (!S.isConnected()) { root.append(el("div", { class: "placeholder" }, "右上「📁 共有フォルダに接続」で、チームの共有フォルダを選んでください。保存データ（各月のJSON）がそこに読み書きされます。")); return; }
+    if (!state.model) { root.append(el("div", { class: "placeholder" }, "「対象月」で月を選ぶか、「＋ 新規月」で作成してください。")); return; }
     computeFamilyColors();
     root.append(renderMeasureSection("active", "今月実施（施策）", "calendar-check"));
     root.append(renderMeasureSection("carryNext", "次月持越し", "arrow-forward-up"));
@@ -876,6 +884,8 @@
   }
   async function startEditing() {
     if (state.editing) { await S.clearLock(state.month); state.editing = false; rerender(); return; }
+    if (!S.isConnected()) { alert("共有フォルダに未接続です。右上「共有フォルダに接続」で共有フォルダを選んでから編集してください。"); return; }
+    if (!state.model) { alert("先に「対象月」で月を選ぶか、「＋新規月」で作成してください。"); return; }
     if (!state.user) { alert("先に右上のお名前を入力してください。"); return; }
     const lock = await S.readLock(state.month);
     if (lock && lock.user !== state.user) { alert(`${lock.user} さんが編集中です。`); return; }
@@ -884,6 +894,7 @@
   }
   async function save() {
     if (!state.editing || !state.model) return;
+    if (!S.isConnected()) { alert("共有フォルダに未接続のため保存できません。右上「共有フォルダに接続」で共有フォルダを選んでください。"); return; }
     state.model.updatedAt = new Date().toISOString(); state.model.updatedBy = state.user;
     await S.writeMonth(state.month, state.model);
     state.mtime = await S.monthMtime(state.month); updateSavedAt(); flash("保存しました");
@@ -901,6 +912,7 @@
     document.body.append(scrim);
   }
   async function newMonth() {
+    if (!S.isConnected()) { alert("共有フォルダに未接続です。右上「共有フォルダに接続」で共有フォルダを選んでから作成してください。"); return; }
     const months = await S.listMonths();
     const body = el("div", {});
     const monthInp = el("input", { class: "modal-in", placeholder: "例：202611", maxlength: "6", inputmode: "numeric" });
@@ -953,7 +965,13 @@
     // 担当を手入力で確定したら候補に自動追加
     $("#board").addEventListener("change", e => { const t = e.target; if (t && t.getAttribute && t.getAttribute("data-field") === "owner") addOwner(t.value); });
     $("#userName").addEventListener("change", e => { state.user = e.target.value.trim(); localStorage.setItem("dmplan:user", state.user); });
-    $("#connectBtn").addEventListener("click", async () => { try { await S.connectFolder(); renderHeader(); await renderMonthSelect(); flash("共有フォルダに接続しました"); } catch (e) { alert(e.message); } });
+    $("#connectBtn").addEventListener("click", async () => {
+      try {
+        await S.connectFolder(); renderHeader(); await renderMonthSelect(); flash("共有フォルダに接続しました");
+        const ms = await S.listMonths();
+        if (ms.length) { $("#monthSelect").value = ms[0]; await loadMonth(ms[0]); } else { renderBody(); renderLockBar(); }
+      } catch (e) { alert(e.message); }
+    });
     $("#monthSelect").addEventListener("change", e => e.target.value && loadMonth(e.target.value));
     $("#newMonthBtn").addEventListener("click", newMonth);
     // Cover Flow（月めくり）
@@ -993,8 +1011,10 @@
     window.addEventListener("beforeunload", () => { if (state.editing) S.clearLock(state.month); });
     if (S.supported) { try { await S.tryRestore(); renderHeader(); } catch (e) {} }
     await renderMonthSelect();
-    const months = await S.listMonths();
-    if (months.length) await loadMonth(months[0]); else { renderBody(); renderLockBar(); }
+    if (S.isConnected()) {
+      const months = await S.listMonths();
+      if (months.length) await loadMonth(months[0]); else { renderBody(); renderLockBar(); }
+    } else { renderBody(); renderLockBar(); }
   }
   document.addEventListener("DOMContentLoaded", init);
 })();

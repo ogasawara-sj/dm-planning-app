@@ -48,6 +48,8 @@ body {
   padding: 4px 10px; border-radius: 20px; background: #f0f1f4; }
 .folder-status.on { color: var(--ok); background: var(--ok-soft); }
 .folder-status.on::before { content: "● "; }
+.folder-status.off { color: var(--warn); background: var(--warn-soft); }
+.folder-status.off::before { content: "○ "; }
 .user-field { display: flex; flex-direction: column; font-size: 10px; color: var(--muted); gap: 3px; }
 .user-field input { font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
 

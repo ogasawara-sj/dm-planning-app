@@ -40,32 +40,36 @@ window.Storage = (function () {
 
   const supported = "showDirectoryPicker" in window;
 
-  // 権限確認/要求
-  async function ensurePermission(handle, mode = "readwrite") {
+  let pendingHandle = null;   // 前回フォルダ（要・許可）
+
+  // 権限の状態確認（要求はしない）
+  async function hasPermission(handle, mode = "readwrite") {
     if (!handle) return false;
-    const opts = { mode };
-    if ((await handle.queryPermission(opts)) === "granted") return true;
-    if ((await handle.requestPermission(opts)) === "granted") return true;
-    return false;
+    try { return (await handle.queryPermission({ mode })) === "granted"; } catch (e) { return false; }
+  }
+  async function requestPermission(handle, mode = "readwrite") {
+    if (!handle) return false;
+    try { if ((await handle.queryPermission({ mode })) === "granted") return true; return (await handle.requestPermission({ mode })) === "granted"; } catch (e) { return false; }
   }
 
-  // 前回接続フォルダの復帰（要ユーザー操作の場合あり）
+  // 前回接続フォルダの復帰：許可が残っている時だけ自動接続。無ければ pendingHandle に退避（接続クリックで許可のみ復帰）。
   async function tryRestore() {
     if (!supported) return false;
     const h = await idbGet(IDB_KEY);
     if (!h) return false;
-    if (await ensurePermission(h)) { dirHandle = h; return true; }
-    // 権限が切れている（クリック後に再取得が必要）
-    dirHandle = h;
-    return false;
+    if (await hasPermission(h)) { dirHandle = h; return true; }
+    pendingHandle = h; return false;   // isConnected() は false のまま
   }
 
-  // フォルダ選択
+  // フォルダ選択（前回フォルダがあれば再選択せず許可のみで復帰）
   async function connectFolder() {
     if (!supported) throw new Error("このブラウザはフォルダ直結に未対応です（Edge/Chromeをご利用ください）。");
+    if (pendingHandle) {
+      if (await requestPermission(pendingHandle)) { dirHandle = pendingHandle; pendingHandle = null; await idbSet(IDB_KEY, dirHandle); return dirHandle.name; }
+    }
     const h = await window.showDirectoryPicker({ id: "dmplan", mode: "readwrite" });
-    if (!(await ensurePermission(h))) throw new Error("フォルダへの書き込み許可が必要です。");
-    dirHandle = h;
+    if (!(await requestPermission(h))) throw new Error("フォルダへの書き込み許可が必要です。");
+    dirHandle = h; pendingHandle = null;
     await idbSet(IDB_KEY, h);
     return h.name;
   }
