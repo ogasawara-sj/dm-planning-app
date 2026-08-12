@@ -236,9 +236,9 @@
     const anyFilter = ["owner","kind","listMethod","delivery"].some(f => state.filters[f] && state.filters[f].length);
     if (state.sort.field || anyFilter) head.append(el("button", { class: "btn small ghost", title: "並び替え・絞り込みを解除", onclick: () => { state.sort = { field: "", dir: "asc" }; state.filters = {}; rerender(); } }, icon("filter-off"), " 解除"));
     if (key === "active") {
-      head.append(el("button", { class: "btn small ghost" + (state.showP3 ? " on" : ""), title: "P3/List・優先 列の表示/非表示", onclick: () => { state.showP3 = !state.showP3; rerender(); } }, icon(state.showP3 ? "eye-off" : "eye"), state.showP3 ? " P3/List・優先 非表示" : " P3/List・優先 表示"));
-      head.append(el("button", { class: "btn small ghost" + (state.showCode ? " on" : ""), title: "素材コード列の表示/非表示", onclick: () => { state.showCode = !state.showCode; rerender(); } }, icon(state.showCode ? "eye-off" : "eye"), state.showCode ? " 素材コード非表示" : " 素材コード表示"));
-      if (state.showP3) head.append(el("button", { class: "btn small", onclick: sortByPriority, title: "AI施策を先に、P3/Listが高い順に優先度1から振る" }, "P3/Listで優先度を設定"));
+      head.append(el("button", { class: "btn small toggle" + (state.showP3 ? " on" : ""), title: state.showP3 ? "P3/List・優先 を非表示にする" : "P3/List・優先 を表示する", onclick: () => { state.showP3 = !state.showP3; rerender(); } }, icon(state.showP3 ? "eye" : "eye-off"), " P3/List・優先"));
+      head.append(el("button", { class: "btn small toggle" + (state.showCode ? " on" : ""), title: state.showCode ? "素材コード を非表示にする" : "素材コード を表示する", onclick: () => { state.showCode = !state.showCode; rerender(); } }, icon(state.showCode ? "eye" : "eye-off"), " 素材コード"));
+      head.append(el("button", { class: "btn small", onclick: sortByPriority, title: "AI施策を先に、P3/Listが高い順に優先度1から振る" }, "P3/Listで優先度を設定"));
     }
     wrap.append(head);
     const table = el("table", { class: "grid" });
@@ -343,7 +343,7 @@
       const opts = getOptions(); if (!opts.length) return;
       opts.forEach(o => {
         const it = el("div", { class: "combo-opt" + (m[f] === o ? " sel" : "") }, o);
-        it.addEventListener("mousedown", e => { e.preventDefault(); inp.value = o; m[f] = o; inp.dispatchEvent(new Event("change", { bubbles: true })); menu.classList.remove("open"); if (f === "baseName") refreshAllNames(); });
+        it.addEventListener("mousedown", e => { e.preventDefault(); inp.value = o; m[f] = o; inp.dispatchEvent(new Event("change", { bubbles: true })); menu.classList.remove("open"); if (f === "baseName") { refreshAllNames(); applyFamilyColors(); } });
         menu.append(it);
       });
       const r = inp.getBoundingClientRect();
@@ -550,6 +550,26 @@
     }));
   }
   function familyColorOf(m) { const bn = (m.baseName || "").trim(); return bn ? familyColors[bn] : null; }
+  // 施策名変更時：全行の色を即時に付け替え（再描画せずフォーカス維持）
+  function applyFamilyColors() {
+    computeFamilyColors();
+    ["active", "carryNext", "carryFuture"].forEach(k => (state.model[k] || []).forEach(m => {
+      const tr = document.querySelector(`tr[data-row="${m.id}"]`); if (!tr) return;
+      const fc = familyColorOf(m);
+      if (fc) { tr.classList.add("fam-row"); tr.style.background = fc.bg; tr.style.setProperty("--band", fc.band); }
+      else { tr.classList.remove("fam-row"); tr.style.background = ""; tr.style.removeProperty("--band"); }
+      if (state.expanded[m.id]) {
+        const det = tr.nextElementSibling;
+        if (det && det.classList.contains("detail-row")) {
+          const cell = det.querySelector("td");
+          if (cell) {
+            if (fc) { cell.style.background = lightenHex(fc.bg, 0.45); cell.style.boxShadow = "inset 4px 0 0 " + fc.band; cell.style.borderBottom = "2px solid " + fc.band; }
+            else { cell.style.background = ""; cell.style.boxShadow = ""; cell.style.borderBottom = ""; }
+          }
+        }
+      }
+    }));
+  }
 
   function renderBody() {
     const root = $("#board"); root.innerHTML = "";
@@ -590,7 +610,7 @@
     if (f === "kind") { rerenderRow(sectionOf(item), item); refreshAllNames(); renderSummary(); return; }
     if (f === "category") { const cc = document.querySelector(`[data-code="${id}"]`); if (cc) renderCodeCell(cc, item); }
     if (f === "num") { const cv = document.querySelector(`[data-code="${id}"] .codeval`); if (cv) cv.textContent = window.buildMaterialCode(window.prefixOfCategory(item.category), item.num) || "—"; }
-    if (f === "baseName") refreshAllNames();                     // 兄弟の RO①② 採番に影響
+    if (f === "baseName") { refreshAllNames(); applyFamilyColors(); }   // 採番＋色を即時更新
     else if (["category", "num", "media", "codeStatus"].includes(f)) { const nin = document.querySelector(`[data-derived="${id}"] .namein`); if (nin && !(item.officialName && item.officialName.trim())) nin.value = derive(item, state.month).fullName; }
     if (f === "estimatedCount") renderSummary();
   }

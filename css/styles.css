@@ -71,6 +71,11 @@ body {
 .btn.accent { background: var(--ok); color: #fff; border-color: var(--ok); }
 .btn.accent:hover:not(:disabled) { filter: brightness(.96); }
 .btn.ghost { background: #f3f4f7; }
+/* 列表示トグル：非表示=グレーアウト、表示=アクセント色で活性 */
+.btn.toggle { background: #f1f4f8; border-color: var(--line); color: var(--faint); font-weight: 600; }
+.btn.toggle:hover { background: #e9edf3; color: var(--muted); }
+.btn.toggle.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-d); }
+.btn.toggle.on:hover { background: #e3e7ff; }
 .btn.small { padding: 5px 11px; font-size: 12px; }
 .btn.tiny { padding: 4px 9px; font-size: 11px; border-radius: 8px; }
 
