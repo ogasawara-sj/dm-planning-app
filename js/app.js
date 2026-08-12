@@ -9,7 +9,7 @@
     user: localStorage.getItem("dmplan:user") || "",
     month: null, model: null, mtime: 0, editing: false, pollTimer: null,
     drawerId: null, sort: { field: "", dir: "asc" }, filters: {}, dragId: null, dragKey: null,
-    expanded: {}, codeEdit: {},
+    expanded: {}, showCode: false,
   };
   const uid = () => "m" + Math.random().toString(36).slice(2, 9);
 
@@ -205,7 +205,7 @@
     { t: "P3/List", title: "P3/List", f: "p3", type: "num" },
     { t: "優先", f: "priority", type: "num" },
     { t: "件数", title: "想定件数", f: "estimatedCount", type: "num" },
-    { t: "素材コード", title: "素材コード（正式名の候補）。普段は折りたたみ、鉛筆で編集" }, { t: "テスト検証" }, { t: "→ 正式名候補（編集可）" },
+    { t: "素材コード", key: "code", title: "素材コード（正式名の候補）" }, { t: "テスト検証" }, { t: "→ 正式名候補（編集可）" },
     { t: "リスト条件" }, { t: "" },
   ];
   function passFilters(m) {
@@ -222,22 +222,27 @@
     const r = rows.slice().sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * (dir === "desc" ? -1 : 1); });
     return r;
   }
+  // 素材コード列は既定で非表示。state.showCode で表示切替
+  function activeCols() { return COLS.filter(c => !(c.key === "code" && !state.showCode)); }
   function renderMeasureSection(key, label, icn) {
     const list = state.model[key];
     const wrap = el("section", { class: "sec" });
     const head = el("div", { class: "sec-head" }, el("h2", {}, icon(icn), " " + label, el("span", { class: "sec-count" }, `${list.length}`)));
-    const anyFilter = ["owner","kind","listMethod"].some(f => state.filters[f] && state.filters[f].length);
+    const anyFilter = ["owner","kind","listMethod","delivery"].some(f => state.filters[f] && state.filters[f].length);
     if (state.sort.field || anyFilter) head.append(el("button", { class: "btn small ghost", title: "並び替え・絞り込みを解除", onclick: () => { state.sort = { field: "", dir: "asc" }; state.filters = {}; rerender(); } }, icon("filter-off"), " 解除"));
-    if (key === "active") head.append(el("button", { class: "btn small", onclick: sortByPriority, title: "AI施策を先に、P3/Listが高い順に優先度1から振る" }, "P3/Listで優先度を設定"));
+    if (key === "active") {
+      head.append(el("button", { class: "btn small ghost" + (state.showCode ? " on" : ""), title: "素材コード列の表示/非表示", onclick: () => { state.showCode = !state.showCode; rerender(); } }, icon(state.showCode ? "eye-off" : "eye"), state.showCode ? " 素材コード非表示" : " 素材コード表示"));
+      head.append(el("button", { class: "btn small", onclick: sortByPriority, title: "AI施策を先に、P3/Listが高い順に優先度1から振る" }, "P3/Listで優先度を設定"));
+    }
     wrap.append(head);
     const table = el("table", { class: "grid" });
     const thr = el("tr", {});
-    COLS.forEach(c => thr.append(headerCell(c)));
+    activeCols().forEach(c => thr.append(headerCell(c)));
     table.append(el("thead", {}, thr));
     const tb = el("tbody", {});
     const rows = sortView(list.filter(passFilters));
     rows.forEach(m => { tb.append(row(key, m)); if (state.expanded[m.id]) tb.append(detailRow(key, m)); });
-    if (rows.length === 0) tb.append(el("tr", {}, el("td", { colspan: String(COLS.length), class: "muted", style: "padding:10px" }, "該当する施策がありません")));
+    if (rows.length === 0) tb.append(el("tr", {}, el("td", { colspan: String(activeCols().length), class: "muted", style: "padding:10px" }, "該当する施策がありません")));
     table.append(tb);
     wrap.append(el("div", { class: "grid-scroll" }, table));
     wrap.append(el("div", { class: "add-bottom" }, el("button", { class: "btn small ghost", onclick: () => { list.push(emptyMeasure()); rerender(); } }, icon("plus"), " 施策を追加")));
@@ -373,7 +378,7 @@
     tr.append(td(numField(m, "p3", true, "w-p3")));
     tr.append(td(field(m, "priority", { class: "w-pri", type: "number", min: "1", placeholder: "—" })));
     tr.append(td(numField(m, "estimatedCount", false, "w-cnt")));
-    const codeCell = el("td", { class: "c-code", "data-code": m.id }); renderCodeCell(codeCell, m); tr.append(codeCell);
+    if (state.showCode) { const codeCell = el("td", { class: "c-code", "data-code": m.id }); renderCodeCell(codeCell, m); tr.append(codeCell); }
     const cmpCell = el("td", { class: "c-cmp", "data-cmp": m.id }); renderCmpCell(cmpCell, m); tr.append(cmpCell);
     // 正式名候補：編集可＋コピー
     const der = el("td", { class: "c-derived", "data-derived": m.id });
@@ -397,16 +402,7 @@
     const confirmed = m.codeStatus === "確定";
     const prefix = window.prefixOfCategory(m.category);
     const has = m.num !== "" && m.num != null;
-    cell.className = "c-code " + (confirmed ? "code-ok" : "code-pend") + (state.codeEdit[m.id] ? " editing" : "");
-    if (!state.codeEdit[m.id]) {
-      // 普段は非表示（コードだけコンパクト表示）＋鉛筆で展開
-      cell.append(el("span", { class: "codeval " + (confirmed ? "ok" : "pend") }, has ? window.buildMaterialCode(prefix, m.num) : "未確定"));
-      const ed = el("button", { class: "iconbtn code-edit", title: "素材コードを編集（カテゴリ・番号・確定）" }); ed.append(icon("pencil"));
-      ed.addEventListener("click", () => { if (!state.editing) return; state.codeEdit[m.id] = true; renderCodeCell(cell, m); });
-      cell.append(ed);
-      return;
-    }
-    // 展開：カテゴリ＋番号＋コード＋確定トグル＋閉じる
+    cell.className = "c-code " + (confirmed ? "code-ok" : "code-pend");
     cell.append(pick(m, "category", M.categories.map(c => ({ value: c.key, label: c.key })), { class: "w-cat" }));
     cell.append(field(m, "num", { class: "w-num", type: "number", min: "1", placeholder: "180" }));
     cell.append(el("span", { class: "codeval " + (confirmed ? "ok" : "pend") }, has ? window.buildMaterialCode(prefix, m.num) : "—"));
@@ -415,9 +411,6 @@
     tog.append(icon(on ? "circle-check" : "circle-dashed"));
     tog.addEventListener("click", () => { if (!state.editing) return; m.codeStatus = on ? "未確定" : "確定"; rerenderRow(sectionOf(m), m); renderSummary(); });
     cell.append(tog);
-    const close = el("button", { class: "iconbtn code-edit", title: "閉じる" }); close.append(icon("check"));
-    close.addEventListener("click", () => { state.codeEdit[m.id] = false; renderCodeCell(cell, m); });
-    cell.append(close);
   }
   // テスト検証：RO等は「—」、テストは必ず OK / NG
   function renderCmpCell(cell, m) {
@@ -483,7 +476,7 @@
   // 行の下に開く詳細（施策の裏側データ：施策概要・特典・RO版FIX）
   function detailRow(key, m) {
     const tr = el("tr", { class: "detail-row" });
-    const cell = el("td", { colspan: String(COLS.length) });
+    const cell = el("td", { colspan: String(activeCols().length) });
     // 親と同系の淡色（さらに薄く）で内訳を表示
     const fc = familyColorOf(m);
     if (fc) { cell.style.background = lightenHex(fc.bg, 0.45); cell.style.boxShadow = "inset 4px 0 0 " + fc.band; cell.style.borderBottom = "2px solid " + fc.band; }
