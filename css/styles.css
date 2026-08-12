@@ -243,6 +243,20 @@ tr.active-row { box-shadow: inset 3px 0 0 var(--accent); }
 .cm-item:hover, .cm-check:hover { background: #f0f2f5; }
 .cm-check.on { color: var(--accent-d); font-weight: 600; }
 .cm-sep { font-size: 10px; color: var(--muted); padding: 8px 10px 4px; border-top: 1px solid var(--line-2); margin-top: 4px; }
+.cm-monthsel { width: calc(100% - 12px); margin: 4px 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; background: #fff; }
+.cm-btnrow { display: flex; gap: 6px; padding: 2px 6px 6px; }
+.cm-mini { flex: 1; border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 6px 8px; font-size: 12px; font-weight: 600; cursor: pointer; color: #334155; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.cm-mini:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-d); }
+
+/* モーダル */
+.modal-scrim { position: fixed; inset: 0; background: rgba(15,23,42,.35); display: flex; align-items: center; justify-content: center; z-index: 90; }
+.modal { background: #fff; border-radius: 16px; box-shadow: var(--sh-lg); width: 420px; max-width: 92vw; overflow: hidden; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.modal-title { font-weight: 700; font-size: 15px; }
+.modal-body { padding: 18px; }
+.modal-in { width: 100%; border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; font-size: 14px; font-family: inherit; background: #fff; }
+.modal-err { color: var(--danger); font-size: 12px; min-height: 16px; margin-top: 4px; }
+.modal-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
 .cm-owner { display: flex; align-items: center; justify-content: space-between; padding: 4px 10px; font-size: 12px; }
 .cm-x { border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; border-radius: 6px; padding: 1px 7px; }
 .cm-x:hover { background: #fde5e5; color: var(--danger); }

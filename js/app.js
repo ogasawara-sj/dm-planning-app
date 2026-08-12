@@ -474,12 +474,42 @@
   function openMoveMenu(key, id, anchor) {
     closeColMenu();
     const menu = el("div", { id: "colMenu", class: "col-menu" });
-    menu.append(el("div", { class: "cm-sep" }, "移動先"));
+    menu.addEventListener("click", e => e.stopPropagation());   // メニュー内クリックで閉じない
+    menu.append(el("div", { class: "cm-sep" }, "このシート内で移動"));
     [["active","今月実施"],["carryNext","次月持越し"],["carryFuture","今後へ持越し"]].filter(([k]) => k !== key)
       .forEach(([k, lab]) => menu.append(el("button", { class: "cm-item", onclick: () => { moveMeasure(key, id, k); closeColMenu(); } }, "→ " + lab)));
+    // 別の月へ（既存の月のみ）
+    S.listMonths().then(months => {
+      const others = months.filter(mo => mo !== state.month);
+      if (!others.length) return;
+      menu.append(el("div", { class: "cm-sep" }, "別の月へ（素材コードは未確定に）"));
+      const sel = el("select", { class: "cm-monthsel" });
+      others.forEach(mo => sel.append(el("option", { value: mo }, window.monthLabel(mo))));
+      menu.append(sel);
+      menu.append(el("div", { class: "cm-btnrow" },
+        el("button", { class: "cm-mini", onclick: () => { copyMoveToMonth(key, id, sel.value, "copy"); closeColMenu(); } }, icon("copy"), " コピー"),
+        el("button", { class: "cm-mini", onclick: () => { copyMoveToMonth(key, id, sel.value, "move"); closeColMenu(); } }, icon("arrow-right"), " 移動")));
+    });
     const r = anchor.getBoundingClientRect();
-    menu.style.left = Math.min(r.left, window.innerWidth - 200) + "px"; menu.style.top = (r.bottom + 2) + "px";
+    menu.style.left = Math.min(r.left, window.innerWidth - 220) + "px"; menu.style.top = (r.bottom + 2) + "px";
     document.body.append(menu); setTimeout(() => document.addEventListener("click", closeColMenu), 0);
+  }
+  async function copyMoveToMonth(fromKey, id, targetMonth, mode) {
+    if (!state.editing || !targetMonth) return;
+    const l = state.model[fromKey]; const i = l.findIndex(x => x.id === id); if (i < 0) return;
+    const c = JSON.parse(JSON.stringify(l[i]));
+    c.id = uid(); c.codeStatus = "未確定"; c.num = ""; c.officialName = ""; c.testValidated = false; c.compareBaseId = "";
+    const raw = await S.readMonth(targetMonth);
+    const tgt = normalize(raw ? JSON.parse(JSON.stringify(raw)) : emptyModel(targetMonth));
+    tgt.active.push(c); tgt.updatedAt = new Date().toISOString(); tgt.updatedBy = state.user;
+    await S.writeMonth(targetMonth, tgt);
+    if (mode === "move") {
+      l.splice(i, 1);
+      state.model.updatedAt = new Date().toISOString(); state.model.updatedBy = state.user;
+      await S.writeMonth(state.month, state.model); state.mtime = await S.monthMtime(state.month);
+      rerender();
+    }
+    flash(`${window.monthLabel(targetMonth)} へ${mode === "move" ? "移動" : "コピー"}しました`);
   }
   // 行の下に開く詳細（施策の裏側データ：施策概要・特典・RO版FIX）
   function detailRow(key, m) {
@@ -797,22 +827,50 @@
     await S.writeMonth(state.month, state.model);
     state.mtime = await S.monthMtime(state.month); updateSavedAt(); flash("保存しました");
   }
+  // ---- モーダル ----
+  function closeModal() { const s = document.getElementById("modalScrim"); if (s) s.remove(); }
+  function openModal(title, bodyNode) {
+    closeModal();
+    const scrim = el("div", { class: "modal-scrim", id: "modalScrim" });
+    const box = el("div", { class: "modal" });
+    box.append(el("div", { class: "modal-head" }, el("div", { class: "modal-title" }, title), el("button", { class: "iconbtn", onclick: closeModal }, "✕")));
+    box.append(el("div", { class: "modal-body" }, bodyNode));
+    scrim.append(box);
+    scrim.addEventListener("click", e => { if (e.target === scrim) closeModal(); });
+    document.body.append(scrim);
+  }
   async function newMonth() {
-    const m = prompt("新しい発送年月を6桁で（例：202610）"); if (!m) return;
-    if (!window.isValidMonth(m)) { alert("6桁の数字で入力してください"); return; }
-    if (await S.readMonth(m)) { if (!confirm(`${window.monthLabel(m)} は既にあります。開きますか？`)) return; await renderMonthSelect(); $("#monthSelect").value=m; await loadMonth(m); return; }
     const months = await S.listMonths();
-    let model = emptyModel(m);
-    if (months.length && confirm(`直近の ${window.monthLabel(months[0])} をコピーして作成しますか？\n（素材コードはすべて「未確定」に戻します）`)) {
-      const src = await S.readMonth(months[0]);
+    const body = el("div", {});
+    const monthInp = el("input", { class: "modal-in", placeholder: "例：202611", maxlength: "6", inputmode: "numeric" });
+    body.append(labeled("発送年月（6桁）", monthInp));
+    const srcSel = el("select", { class: "modal-in" });
+    srcSel.append(el("option", { value: "" }, "空で作成（コピーしない）"));
+    months.forEach(mo => srcSel.append(el("option", { value: mo }, `${window.monthLabel(mo)} をコピー`)));
+    if (months.length) srcSel.value = months[0];   // 既定＝最新月
+    body.append(labeled("コピー元の月（素材コードは未確定に戻ります）", srcSel));
+    const err = el("div", { class: "modal-err" });
+    const create = async () => {
+      const m = monthInp.value.trim(); err.textContent = "";
+      if (!window.isValidMonth(m)) { err.textContent = "6桁の数字で入力してください（例：202611）"; return; }
+      if (await S.readMonth(m)) { err.textContent = "その月は既にあります。上部の「対象月」から開いてください。"; return; }
+      let model = emptyModel(m);
+      const src = srcSel.value;
       if (src) {
-        model = normalize(JSON.parse(JSON.stringify(src)));
-        model.month = m; model.title = window.monthLabel(m) + "DM施策"; model.updatedAt=""; model.updatedBy="";
-        ["active","carryNext","carryFuture"].forEach(k => (model[k]||[]).forEach(it => { it.id = uid(); it.codeStatus = "未確定"; it.num = ""; }));
-        (model.ideas||[]).forEach(it => it.id = uid());
+        const s = await S.readMonth(src);
+        if (s) {
+          model = normalize(JSON.parse(JSON.stringify(s)));
+          model.month = m; model.title = window.monthLabel(m) + " DM施策"; model.updatedAt = ""; model.updatedBy = "";
+          ["active","carryNext","carryFuture"].forEach(k => (model[k]||[]).forEach(it => { it.id = uid(); it.codeStatus = "未確定"; it.num = ""; it.officialName = ""; }));
+          (model.ideas||[]).forEach(it => it.id = uid());
+        }
       }
-    }
-    await S.writeMonth(m, model); await renderMonthSelect(); $("#monthSelect").value = m; await loadMonth(m); flash("新規月を作成しました");
+      await S.writeMonth(m, model); closeModal(); await renderMonthSelect(); $("#monthSelect").value = m; await loadMonth(m); flash("新規月を作成しました");
+    };
+    monthInp.addEventListener("keydown", e => { if (e.key === "Enter") create(); });
+    body.append(err, el("div", { class: "modal-actions" }, el("button", { class: "btn primary", onclick: create }, "作成")));
+    openModal("新規月を作成", body);
+    setTimeout(() => monthInp.focus(), 0);
   }
 
   function startPolling() {
