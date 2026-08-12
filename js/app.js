@@ -9,7 +9,7 @@
     user: localStorage.getItem("dmplan:user") || "",
     month: null, model: null, mtime: 0, editing: false, pollTimer: null,
     drawerId: null, sort: { field: "", dir: "asc" }, filters: {}, dragId: null, dragKey: null,
-    expanded: {}, showCode: false,
+    expanded: {}, showCode: false, showP3: false,
   };
   const uid = () => "m" + Math.random().toString(36).slice(2, 9);
 
@@ -202,10 +202,10 @@
     { t: "種別", f: "kind", type: "cat" },
     { t: "取得", f: "listMethod", type: "cat" },
     { t: "送付", f: "delivery", type: "cat" },
-    { t: "P3/List", title: "P3/List", f: "p3", type: "num" },
-    { t: "優先", f: "priority", type: "num" },
+    { t: "P3/List", title: "P3/List", f: "p3", type: "num", hideGroup: "p3" },
+    { t: "優先", f: "priority", type: "num", hideGroup: "p3" },
     { t: "件数", title: "想定件数", f: "estimatedCount", type: "num" },
-    { t: "素材コード", key: "code", title: "素材コード（正式名の候補）" }, { t: "テスト検証" }, { t: "→ 正式名候補（編集可）" },
+    { t: "素材コード", key: "code", hideGroup: "code", title: "素材コード（正式名の候補）" }, { t: "テスト検証" }, { t: "→ 正式名候補（編集可）" },
     { t: "リスト条件" }, { t: "" },
   ];
   function passFilters(m) {
@@ -222,8 +222,13 @@
     const r = rows.slice().sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * (dir === "desc" ? -1 : 1); });
     return r;
   }
-  // 素材コード列は既定で非表示。state.showCode で表示切替
-  function activeCols() { return COLS.filter(c => !(c.key === "code" && !state.showCode)); }
+  // 一部の列は既定で非表示（トグルで表示）
+  function colVisible(c) {
+    if (c.hideGroup === "code") return state.showCode;
+    if (c.hideGroup === "p3") return state.showP3;
+    return true;
+  }
+  function activeCols() { return COLS.filter(colVisible); }
   function renderMeasureSection(key, label, icn) {
     const list = state.model[key];
     const wrap = el("section", { class: "sec" });
@@ -231,8 +236,9 @@
     const anyFilter = ["owner","kind","listMethod","delivery"].some(f => state.filters[f] && state.filters[f].length);
     if (state.sort.field || anyFilter) head.append(el("button", { class: "btn small ghost", title: "並び替え・絞り込みを解除", onclick: () => { state.sort = { field: "", dir: "asc" }; state.filters = {}; rerender(); } }, icon("filter-off"), " 解除"));
     if (key === "active") {
+      head.append(el("button", { class: "btn small ghost" + (state.showP3 ? " on" : ""), title: "P3/List・優先 列の表示/非表示", onclick: () => { state.showP3 = !state.showP3; rerender(); } }, icon(state.showP3 ? "eye-off" : "eye"), state.showP3 ? " P3/List・優先 非表示" : " P3/List・優先 表示"));
       head.append(el("button", { class: "btn small ghost" + (state.showCode ? " on" : ""), title: "素材コード列の表示/非表示", onclick: () => { state.showCode = !state.showCode; rerender(); } }, icon(state.showCode ? "eye-off" : "eye"), state.showCode ? " 素材コード非表示" : " 素材コード表示"));
-      head.append(el("button", { class: "btn small", onclick: sortByPriority, title: "AI施策を先に、P3/Listが高い順に優先度1から振る" }, "P3/Listで優先度を設定"));
+      if (state.showP3) head.append(el("button", { class: "btn small", onclick: sortByPriority, title: "AI施策を先に、P3/Listが高い順に優先度1から振る" }, "P3/Listで優先度を設定"));
     }
     wrap.append(head);
     const table = el("table", { class: "grid" });
@@ -375,8 +381,10 @@
     tr.append(td(pick(m, "kind", M.kinds, { class: "w-kind" })));
     tr.append(td(pick(m, "listMethod", M.listMethods, { class: "w-lm" })));
     tr.append(td(pick(m, "delivery", M.deliveryTypes, { class: "w-souf" })));
-    tr.append(td(numField(m, "p3", true, "w-p3")));
-    tr.append(td(field(m, "priority", { class: "w-pri", type: "number", min: "1", placeholder: "—" })));
+    if (state.showP3) {
+      tr.append(td(numField(m, "p3", true, "w-p3")));
+      tr.append(td(field(m, "priority", { class: "w-pri", type: "number", min: "1", placeholder: "—" })));
+    }
     tr.append(td(numField(m, "estimatedCount", false, "w-cnt")));
     if (state.showCode) { const codeCell = el("td", { class: "c-code", "data-code": m.id }); renderCodeCell(codeCell, m); tr.append(codeCell); }
     const cmpCell = el("td", { class: "c-cmp", "data-cmp": m.id }); renderCmpCell(cmpCell, m); tr.append(cmpCell);
@@ -812,6 +820,19 @@
     $("#editBtn").addEventListener("click", startEditing);
     $("#saveBtn").addEventListener("click", save);
     $("#board").addEventListener("input", onInput);
+    // Enterで真下の同じ列へ移動（表計算風）
+    $("#board").addEventListener("keydown", e => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      const t = e.target;
+      if (!t.matches || !t.matches("input") || t.type === "date") return;
+      const td = t.closest("td"), tr = t.closest("tr[data-row]"); if (!td || !tr) return;
+      const idx = [...tr.children].indexOf(td);
+      let next = tr.nextElementSibling;
+      while (next && !next.matches("tr[data-row]")) next = next.nextElementSibling;
+      if (!next || !next.children[idx]) return;
+      const inp = next.children[idx].querySelector("input, select");
+      if (inp) { e.preventDefault(); inp.focus(); try { inp.select && inp.select(); } catch (_) {} }
+    });
     $("#drawerClose").addEventListener("click", closeDrawer);
     $("#drawerScrim").addEventListener("click", closeDrawer);
     window.addEventListener("beforeunload", () => { if (state.editing) S.clearLock(state.month); });

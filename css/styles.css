@@ -140,7 +140,7 @@ table.grid select.w-kind, table.grid select.w-lm, table.grid select.w-souf { bac
 table.grid select.w-kind:hover, table.grid select.w-lm:hover, table.grid select.w-souf:hover, table.grid select.w-kind:focus, table.grid select.w-lm:focus, table.grid select.w-souf:focus { background: #fff; }
 table.grid input:focus, table.grid select:focus { border-color: var(--accent); background: #fff; outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
 
-.w-name { min-width: 132px; } .w-own { min-width: 54px; }
+.w-name { min-width: 106px; } .w-own { min-width: 44px; }
 .w-kind, .w-lm { min-width: 62px; font-size: 12px; line-height: 1.4; }
 .w-p3 { min-width: 42px; } .w-pri { min-width: 34px; } .w-cnt { min-width: 84px; } .w-cat { width: 74px; } .w-num { width: 66px; }
 .w-souf { min-width: 96px; }
