@@ -61,7 +61,9 @@ body {
 
 /* ---- Cover Flow（月めくり） ---- */
 .cf-hot { display: none; }
-.cf-hot.active { display: block; text-align: center; font-size: 12px; font-weight: 700; color: var(--accent-d); background: var(--accent-soft); border: 1.5px dashed var(--accent); border-radius: 12px; margin: 8px 20px; padding: 12px; }
+/* 固定オーバーレイ（レイアウトをずらさない＝ドラッグ中の並べ替えを壊さない） */
+.cf-hot.active { display: block; position: fixed; top: 120px; left: 16px; right: 16px; z-index: 55; text-align: center; font-size: 12px; font-weight: 700;
+  color: var(--accent-d); background: var(--accent-soft); border: 1.5px dashed var(--accent); border-radius: 12px; padding: 11px; box-shadow: var(--sh); pointer-events: auto; }
 .cf-overlay { position: fixed; left: 16px; right: 16px; top: 122px; height: 0; overflow: hidden; opacity: 0; pointer-events: none;
   background: linear-gradient(180deg, #fbfcff, #f2f5fb); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--sh-lg); z-index: 60; transition: height .26s cubic-bezier(.2,.7,.2,1), opacity .2s; }
 .cf-overlay.open { height: 322px; opacity: 1; pointer-events: auto; }

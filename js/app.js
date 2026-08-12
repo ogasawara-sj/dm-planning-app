@@ -368,7 +368,7 @@
     // ドラッグは左端ハンドルのみ（セル内のテキスト選択・コピーを妨げない）
     const sortActive = !!state.sort.field;
     const handle = el("span", { class: "drag" + (sortActive ? " off" : ""), draggable: sortActive ? "false" : "true", title: sortActive ? "並び替え適用中は手動移動できません（『解除』後に可）" : "ドラッグで並べ替え" }, "⋮⋮");
-    handle.addEventListener("dragstart", e => { if (!state.editing || sortActive) { e.preventDefault(); return; } state.dragId = m.id; state.dragKey = key; state.dragMeasure = { id: m.id, key }; state.draggingMeasure = true; tr.classList.add("dragging"); $("#cfHot").classList.add("active"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", m.id); });
+    handle.addEventListener("dragstart", e => { if (!state.editing || sortActive) { e.preventDefault(); return; } state.dragId = m.id; state.dragKey = key; state.dragMeasure = { id: m.id, key }; state.draggingMeasure = true; tr.classList.add("dragging"); $("#cfHot").classList.add("active"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", m.id); try { e.dataTransfer.setDragImage(tr, 40, 16); } catch (_) {} });
     handle.addEventListener("dragend", () => { tr.classList.remove("dragging"); state.draggingMeasure = false; state.dragMeasure = null; $("#cfHot").classList.remove("active"); if (cf.dragMode) closeCoverflow(); });
     // 展開トグル（裏側の施策概要/特典/RO版FIX）
     const hasNote = !!((m.note && m.note.trim()) || (m.benefit && m.benefit.trim()) || (m.roFixDate && m.roFixDate.trim()) || (m.products && m.products.trim()));
