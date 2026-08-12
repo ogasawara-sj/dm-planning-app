@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" />
-  <link rel="stylesheet" href="css/styles.css?v=14" />
+  <link rel="stylesheet" href="css/styles.css?v=15" />
 </head>
 <body class="readonly">
   <header class="topbar">
@@ -30,6 +30,7 @@
     <label>対象月
       <select id="monthSelect"></select>
     </label>
+    <button id="cfBtn" class="btn ghost" title="月をめくる（Cover Flow）">📆 月をめくる</button>
     <button id="newMonthBtn" class="btn">＋ 新規月</button>
     <span id="planTitle" class="plan-title"></span><span class="title-auto-badge">タイトル自動</span>
     <span id="savedAt" class="saved-at">未保存</span>
@@ -38,7 +39,17 @@
     <button id="saveBtn" class="btn accent" disabled>💾 保存</button>
   </div>
 
+  <div id="cfHot" class="cf-hot">📆 別の月へ移すには、ここへドラッグ（Cover Flow が開きます）</div>
+
   <div id="lockBar" class="lockbar idle">月を選ぶか新規作成してください</div>
+
+  <div id="coverflow" class="cf-overlay" aria-hidden="true">
+    <div class="cf-head"><div class="cf-title">月をめくる</div><button id="cfClose" class="iconbtn" title="閉じる">✕</button></div>
+    <div id="cfStage" class="cf-stage" tabindex="0"></div>
+    <div id="cfCur" class="cf-cur"></div>
+    <div id="cfDots" class="cf-dots"></div>
+    <div id="cfDropHint" class="cf-drophint">ドロップで、この施策を選択中の月へ移動します</div>
+  </div>
 
   <div id="summary" class="summary"></div>
 
@@ -58,8 +69,8 @@
 
   <div id="toast" class="toast"></div>
 
-  <script src="js/masters.js?v=14"></script>
-  <script src="js/storage.js?v=14"></script>
-  <script src="js/app.js?v=14"></script>
+  <script src="js/masters.js?v=15"></script>
+  <script src="js/storage.js?v=15"></script>
+  <script src="js/app.js?v=15"></script>
 </body>
 </html>

@@ -58,6 +58,32 @@ body {
 .monthbar select { font-size: 14px; padding: 8px 13px; border: 1px solid var(--line); border-radius: 10px; background: #fff; min-width: 150px; font-weight: 600; }
 .plan-title { font-size: 16px; font-weight: 700; color: var(--accent-d); margin-left: 4px; }
 .title-auto-badge { font-size: 10.5px; font-weight: 600; color: var(--accent-d); background: var(--accent-soft); padding: 2px 8px; border-radius: 6px; }
+
+/* ---- Cover Flow（月めくり） ---- */
+.cf-hot { display: none; }
+.cf-hot.active { display: block; text-align: center; font-size: 12px; font-weight: 700; color: var(--accent-d); background: var(--accent-soft); border: 1.5px dashed var(--accent); border-radius: 12px; margin: 8px 20px; padding: 12px; }
+.cf-overlay { position: fixed; left: 16px; right: 16px; top: 122px; height: 0; overflow: hidden; opacity: 0; pointer-events: none;
+  background: linear-gradient(180deg, #fbfcff, #f2f5fb); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--sh-lg); z-index: 60; transition: height .26s cubic-bezier(.2,.7,.2,1), opacity .2s; }
+.cf-overlay.open { height: 322px; opacity: 1; pointer-events: auto; }
+.cf-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px 0; }
+.cf-title { font-weight: 700; font-size: 14px; color: var(--ink); }
+.cf-stage { position: relative; height: 208px; perspective: 1200px; overflow: hidden; cursor: grab; outline: none; }
+.cf-stage:active { cursor: grabbing; }
+.cf-card { position: absolute; left: 50%; top: 16px; width: 160px; height: 176px; margin-left: -80px; border-radius: 16px; background: #fff; border: 1px solid var(--line);
+  box-shadow: 0 10px 30px rgba(15,23,42,.14); transition: transform .3s cubic-bezier(.2,.7,.2,1), opacity .3s; transform-style: preserve-3d; display: flex; flex-direction: column; overflow: hidden; }
+.cf-card.here { border-color: var(--accent); }
+.cf-top { height: 7px; background: var(--accent); }
+.cf-yr { font-size: 11px; color: var(--faint); padding: 12px 14px 0; font-weight: 500; }
+.cf-mo { font-size: 30px; font-weight: 700; letter-spacing: -.02em; padding: 2px 14px 0; }
+.cf-st { margin-top: auto; padding: 10px 14px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line-2); }
+.cf-st b { color: var(--accent-d); font-weight: 700; font-size: 14px; }
+.cf-open { display: none; margin: 0 14px 12px; align-items: center; justify-content: center; gap: 6px; background: var(--accent); color: #fff; border: none; border-radius: 9px; padding: 7px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.cf-card.sel .cf-open { display: inline-flex; }
+.cf-cur { text-align: center; font-size: 13px; color: var(--accent-d); font-weight: 700; margin-top: 4px; }
+.cf-dots { display: flex; gap: 6px; justify-content: center; margin-top: 8px; }
+.cf-dot { width: 8px; height: 8px; border-radius: 50%; background: #d7dbe4; cursor: pointer; transition: width .2s; }
+.cf-dot.on { background: var(--accent); width: 22px; border-radius: 5px; }
+.cf-drophint { display: none; text-align: center; font-size: 12px; font-weight: 600; color: var(--ok); margin-top: 6px; }
 .spacer { flex: 1; }
 
 /* ---------- buttons ---------- */

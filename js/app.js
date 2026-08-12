@@ -10,7 +10,9 @@
     month: null, model: null, mtime: 0, editing: false, pollTimer: null,
     drawerId: null, sort: { field: "", dir: "asc" }, filters: {}, dragId: null, dragKey: null,
     expanded: {}, showCode: false, showP3: false,
+    draggingMeasure: false, dragMeasure: null,
   };
+  const cf = { data: [], cards: [], dots: [], sel: 0, dragMode: false };
   const uid = () => "m" + Math.random().toString(36).slice(2, 9);
 
   // 担当候補（この端末に保存。手入力で追加、×で削除）
@@ -366,8 +368,8 @@
     // ドラッグは左端ハンドルのみ（セル内のテキスト選択・コピーを妨げない）
     const sortActive = !!state.sort.field;
     const handle = el("span", { class: "drag" + (sortActive ? " off" : ""), draggable: sortActive ? "false" : "true", title: sortActive ? "並び替え適用中は手動移動できません（『解除』後に可）" : "ドラッグで並べ替え" }, "⋮⋮");
-    handle.addEventListener("dragstart", e => { if (!state.editing || sortActive) { e.preventDefault(); return; } state.dragId = m.id; state.dragKey = key; tr.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", m.id); });
-    handle.addEventListener("dragend", () => tr.classList.remove("dragging"));
+    handle.addEventListener("dragstart", e => { if (!state.editing || sortActive) { e.preventDefault(); return; } state.dragId = m.id; state.dragKey = key; state.dragMeasure = { id: m.id, key }; state.draggingMeasure = true; tr.classList.add("dragging"); $("#cfHot").classList.add("active"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", m.id); });
+    handle.addEventListener("dragend", () => { tr.classList.remove("dragging"); state.draggingMeasure = false; state.dragMeasure = null; $("#cfHot").classList.remove("active"); if (cf.dragMode) closeCoverflow(); });
     // 展開トグル（裏側の施策概要/特典/RO版FIX）
     const hasNote = !!((m.note && m.note.trim()) || (m.benefit && m.benefit.trim()) || (m.roFixDate && m.roFixDate.trim()) || (m.products && m.products.trim()));
     const exp = el("button", { class: "expander" + (hasNote ? " hasnote" : "") + (state.expanded[m.id] ? " open" : ""), title: hasNote ? "詳細・メモあり（クリックで開閉）" : "詳細・メモを開く" });
@@ -510,6 +512,65 @@
       rerender();
     }
     flash(`${window.monthLabel(targetMonth)} へ${mode === "move" ? "移動" : "コピー"}しました`);
+  }
+
+  // ============ Cover Flow（月めくり＋別月へドロップ） ============
+  async function cfLoad() {
+    const months = (await S.listMonths()).slice().reverse();   // 古い→新しい（左→右）
+    const data = [];
+    for (const mo of months) { const m = await S.readMonth(mo); const cnt = m ? (m.active || []).filter(x => x.baseName).length : 0; data.push({ month: mo, count: cnt }); }
+    cf.data = data;
+  }
+  async function openCoverflow(dragMode) {
+    const ov = $("#coverflow");
+    await cfLoad();
+    if (!cf.data.length) { flash("保存済みの月がありません。まず保存してください。"); return; }
+    cf.dragMode = !!dragMode;
+    const idx = cf.data.findIndex(d => d.month === state.month);
+    cf.sel = idx >= 0 ? idx : cf.data.length - 1;
+    renderCF();
+    ov.classList.add("open"); ov.setAttribute("aria-hidden", "false");
+    $("#cfDropHint").style.display = dragMode ? "block" : "none";
+    if (!dragMode) setTimeout(() => $("#cfStage").focus(), 0);
+  }
+  function closeCoverflow() { const ov = $("#coverflow"); if (ov) { ov.classList.remove("open"); ov.setAttribute("aria-hidden", "true"); } }
+  function renderCF() {
+    const stage = $("#cfStage"), dotsEl = $("#cfDots"); stage.innerHTML = ""; dotsEl.innerHTML = "";
+    cf.cards = cf.data.map((d, i) => {
+      const c = el("div", { class: "cf-card" + (d.month === state.month ? " here" : ""), "data-month": d.month });
+      c.append(el("div", { class: "cf-top" }));
+      c.append(el("div", { class: "cf-yr" }, d.month.slice(0, 4) + "年"));
+      c.append(el("div", { class: "cf-mo" }, parseInt(d.month.slice(4), 10) + "月"));
+      c.append(el("div", { class: "cf-st" }, "施策数 ", el("b", {}, String(d.count))));
+      const open = el("button", { class: "cf-open", onclick: e => { e.stopPropagation(); selectMonthFromCF(d.month); } }, d.month === state.month ? "表示中" : "この月を開く ↗");
+      c.append(open);
+      c.addEventListener("click", () => { if (i !== cf.sel) { cf.sel = i; positionCF(); } });
+      c.addEventListener("dragover", e => { if (state.dragMeasure) { e.preventDefault(); if (cf.sel !== i) { cf.sel = i; positionCF(); } } });
+      c.addEventListener("drop", e => { e.preventDefault(); if (state.dragMeasure) dropMeasureToMonth(d.month); });
+      stage.append(c); return c;
+    });
+    cf.dots = cf.data.map((d, i) => { const dot = el("div", { class: "cf-dot", onclick: () => { cf.sel = i; positionCF(); } }); dotsEl.append(dot); return dot; });
+    positionCF();
+  }
+  function positionCF() {
+    cf.data.forEach((d, i) => {
+      const off = i - cf.sel, abs = Math.abs(off);
+      const x = off * 100, ry = Math.max(-55, Math.min(55, off * -42)), tz = -abs * 150, sc = off === 0 ? 1 : .85;
+      const c = cf.cards[i];
+      c.style.transform = `translateX(${x}px) translateZ(${tz}px) rotateY(${ry}deg) scale(${sc})`;
+      c.style.zIndex = String(100 - abs); c.style.opacity = abs > 3 ? "0" : "1";
+      c.classList.toggle("sel", off === 0);
+      if (cf.dots[i]) cf.dots[i].classList.toggle("on", off === 0);
+    });
+    const d = cf.data[cf.sel];
+    $("#cfCur").textContent = d ? `${d.month.slice(0,4)}年 ${parseInt(d.month.slice(4),10)}月 ${cf.dragMode ? "（ここにドロップで移動）" : (d.month===state.month?"（表示中）":"")}` : "";
+  }
+  async function selectMonthFromCF(month) { closeCoverflow(); if (month === state.month) return; await renderMonthSelect(); $("#monthSelect").value = month; await loadMonth(month); }
+  async function dropMeasureToMonth(targetMonth) {
+    const dm = state.dragMeasure;
+    state.dragMeasure = null; state.draggingMeasure = false; $("#cfHot").classList.remove("active"); closeCoverflow();
+    if (dm && targetMonth !== state.month) await copyMoveToMonth(dm.key, dm.id, targetMonth, "move");
+    else if (dm && targetMonth === state.month) flash("同じ月です");
   }
   // 行の下に開く詳細（施策の裏側データ：施策概要・特典・RO版FIX）
   function detailRow(key, m) {
@@ -895,6 +956,22 @@
     $("#connectBtn").addEventListener("click", async () => { try { await S.connectFolder(); renderHeader(); await renderMonthSelect(); flash("共有フォルダに接続しました"); } catch (e) { alert(e.message); } });
     $("#monthSelect").addEventListener("change", e => e.target.value && loadMonth(e.target.value));
     $("#newMonthBtn").addEventListener("click", newMonth);
+    // Cover Flow（月めくり）
+    $("#cfBtn").addEventListener("click", () => openCoverflow(false));
+    $("#cfClose").addEventListener("click", closeCoverflow);
+    $("#coverflow").addEventListener("click", e => { if (e.target.id === "coverflow") closeCoverflow(); });
+    // ドラッグ中に上部ホットゾーンへ入ると Cover Flow を開く（別月へドロップ）
+    $("#cfHot").addEventListener("dragover", e => { if (state.draggingMeasure) { e.preventDefault(); openCoverflow(true); } });
+    $("#cfHot").addEventListener("dragenter", e => { if (state.draggingMeasure) e.preventDefault(); });
+    // ステージのドラッグscrub / キー操作（施策ドラッグ中はscrubしない）
+    (() => {
+      const st = $("#cfStage"); let down = false, sx = 0, ss = 0;
+      st.addEventListener("pointerdown", e => { if (state.draggingMeasure) return; down = true; sx = e.clientX; ss = cf.sel; st.setPointerCapture(e.pointerId); });
+      st.addEventListener("pointermove", e => { if (!down) return; const d = Math.round((sx - e.clientX) / 58); const ns = Math.max(0, Math.min(cf.data.length - 1, ss + d)); if (ns !== cf.sel) { cf.sel = ns; positionCF(); } });
+      st.addEventListener("pointerup", () => { down = false; });
+      st.addEventListener("keydown", e => { if (e.key === "ArrowLeft" && cf.sel > 0) { cf.sel--; positionCF(); } if (e.key === "ArrowRight" && cf.sel < cf.data.length - 1) { cf.sel++; positionCF(); } if (e.key === "Enter" && cf.data[cf.sel]) selectMonthFromCF(cf.data[cf.sel].month); if (e.key === "Escape") closeCoverflow(); });
+      st.addEventListener("wheel", e => { e.preventDefault(); if (e.deltaY > 0 && cf.sel < cf.data.length - 1) { cf.sel++; positionCF(); } else if (e.deltaY < 0 && cf.sel > 0) { cf.sel--; positionCF(); } }, { passive: false });
+    })();
     $("#editBtn").addEventListener("click", startEditing);
     $("#saveBtn").addEventListener("click", save);
     $("#board").addEventListener("input", onInput);
