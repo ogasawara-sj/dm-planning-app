@@ -7,12 +7,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" />
-  <link rel="stylesheet" href="css/styles.css?v=29" />
+  <link rel="stylesheet" href="css/styles.css?v=30" />
 </head>
 <body class="readonly">
   <header class="topbar">
     <div class="brand">
-      <span class="logo">📮</span>
       <div>
         <div class="brand-title">DM企画サマリー</div>
       </div>
@@ -30,7 +29,14 @@
     <label>対象月
       <select id="monthSelect"></select>
     </label>
-    <button id="cfBtn" class="btn ghost" title="月をめくる（Cover Flow）">📆 月をめくる</button>
+    <button id="cfBtn" class="btn ghost cf-btn" title="月をめくる（Cover Flow）">
+      <svg class="cf-ico" width="36" height="20" viewBox="0 0 36 20" fill="none" aria-hidden="true">
+        <path d="M3 7.5 L7 6 L7 14 L3 12.5 Z" fill="currentColor" opacity=".22"/>
+        <path d="M9 5.5 L14 3.5 L14 16.5 L9 14.5 Z" fill="currentColor" opacity=".48"/>
+        <rect x="15" y="2.5" width="6" height="15" rx="1.6" fill="currentColor"/>
+        <path d="M27 5.5 L22 3.5 L22 16.5 L27 14.5 Z" fill="currentColor" opacity=".48"/>
+        <path d="M33 7.5 L29 6 L29 14 L33 12.5 Z" fill="currentColor" opacity=".22"/>
+      </svg>月をめくる</button>
     <button id="newMonthBtn" class="btn">＋ 新規月</button>
     <span id="planTitle" class="plan-title"></span><span class="title-auto-badge">タイトル自動</span>
     <span id="savedAt" class="saved-at">未保存</span>
@@ -69,8 +75,8 @@
 
   <div id="toast" class="toast"></div>
 
-  <script src="js/masters.js?v=29"></script>
-  <script src="js/storage.js?v=29"></script>
-  <script src="js/app.js?v=29"></script>
+  <script src="js/masters.js?v=30"></script>
+  <script src="js/storage.js?v=30"></script>
+  <script src="js/app.js?v=30"></script>
 </body>
 </html>

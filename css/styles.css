@@ -405,8 +405,12 @@ body.readonly .dw-prod .iconbtn, body.readonly .btn.tiny.ghost { display: none; 
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 /* ---- v3 デザイン格上げの仕上げ ---- */
-.brand-title { font-size: 18px; letter-spacing: .02em; }
+.brand-title { font-size: 21px; letter-spacing: .02em; }
 .logo { border-radius: 12px; }
+/* 月をめくる：Cover Flow を図式化したシルエット・アイコン */
+.cf-btn { display: inline-flex; align-items: center; gap: 8px; }
+.cf-ico { color: var(--accent); flex: none; transition: transform .2s ease, color .2s ease; }
+.cf-btn:hover .cf-ico { color: var(--accent-d); transform: translateY(-1px) scale(1.04); }
 .c-ops .iconbtn { border: 1px solid var(--line); border-radius: 9px; width: 30px; height: 30px; color: var(--muted); }
 .c-ops .iconbtn:hover { background: #f5f7fb; color: var(--ink); }
 .c-ops .iconbtn.danger:hover { background: var(--danger-soft); color: var(--danger); border-color: #f6bccb; }
