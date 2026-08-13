@@ -175,19 +175,23 @@ table.grid select.w-kind, table.grid select.w-lm, table.grid select.w-souf { bac
 table.grid select.w-kind:hover, table.grid select.w-lm:hover, table.grid select.w-souf:hover, table.grid select.w-kind:focus, table.grid select.w-lm:focus, table.grid select.w-souf:focus { background: #fff; }
 table.grid input:focus, table.grid select:focus { border-color: var(--accent); background: #fff; outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
 
-.w-name { min-width: 106px; } .w-own { min-width: 44px; }
+.w-name { min-width: 104px; } .w-own { min-width: 56px; }
 .w-kind, .w-lm { min-width: 62px; font-size: 12px; line-height: 1.4; }
-.w-p3 { min-width: 42px; } .w-pri { min-width: 34px; } .w-cnt { min-width: 84px; } .w-cat { width: 74px; } .w-num { width: 66px; }
+.w-p3 { min-width: 42px; } .w-pri { min-width: 34px; } .w-cnt { min-width: 56px; } .w-cat { width: 74px; } .w-num { width: 66px; }
 .w-souf { min-width: 96px; }
+/* 担当＝ひらがな3文字、件数＝半角6桁が入ればOK。極力短く（余白は正式名候補列が吸収） */
+table.grid input.w-own { width: 58px; }
+table.grid input.w-cnt { width: 70px; }
+.c-derived { width: 100%; }
 .w-p3, .w-cnt { text-align: right; }
 /* P3/List・想定件数はスピナー撤去（手打ちのみ・半角数値） */
 .w-p3::-webkit-outer-spin-button, .w-p3::-webkit-inner-spin-button,
 .w-cnt::-webkit-outer-spin-button, .w-cnt::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .w-p3, .w-cnt { -moz-appearance: textfield; }
 
-.c-drag { width: 56px; white-space: nowrap; }
-.rowsel { width: 15px; height: 15px; margin-right: 1px; vertical-align: middle; cursor: pointer; accent-color: var(--accent); }
-.drag { cursor: grab; color: #b9bec7; font-weight: 700; letter-spacing: -2px; user-select: none; display: inline-block; padding: 0 2px; vertical-align: middle; }
+.c-drag { width: 94px; white-space: nowrap; padding-left: 10px; }
+.rowsel, table.grid input.rowsel { width: 15px; height: 15px; margin: 0 8px 0 0; padding: 0; vertical-align: middle; cursor: pointer; accent-color: var(--accent); }
+.drag { cursor: grab; color: #b9bec7; font-weight: 700; letter-spacing: -2px; user-select: none; display: inline-block; padding: 0 2px; margin: 0 6px; vertical-align: middle; }
 .drag:active { cursor: grabbing; }
 .drag.off { color: #dfe2e7; cursor: not-allowed; }
 /* 選択中の行 */
@@ -202,7 +206,7 @@ tr.selected { box-shadow: inset 0 0 0 2px var(--accent); }
 .sel-bar .sel-n { font-weight: 700; font-size: 13px; margin-right: 2px; }
 .sel-bar .btn { background: #fff; }
 .sel-bar .btn.ghost.onwhite { background: transparent; color: #fff; border-color: rgba(255,255,255,.4); }
-.expander { border: none; background: transparent; cursor: pointer; color: var(--muted); font-size: 15px; padding: 2px 3px; border-radius: 6px; vertical-align: middle; position: relative; }
+.expander { border: none; background: transparent; cursor: pointer; color: var(--muted); font-size: 15px; padding: 2px 3px; margin-left: 4px; border-radius: 6px; vertical-align: middle; position: relative; }
 .expander:hover { background: #eef0f3; color: var(--ink); }
 .expander.hasnote { color: var(--accent); }
 .expander.open { background: var(--accent); color: #fff; }
@@ -245,7 +249,7 @@ tr.dragging { opacity: .4; }
 tr.active-row td { background: var(--accent-soft) !important; }
 tr.active-row { box-shadow: inset 3px 0 0 var(--accent); }
 
-.c-status { width: 48px; text-align: center; }
+.c-status { width: 52px; text-align: center; padding-left: 12px; }
 .status { border: none; cursor: pointer; border-radius: 50%; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; }
 .status.ok { background: var(--ok-soft); color: var(--ok); }
 .status.pend { background: #f0f2f5; color: #aeb4bd; }

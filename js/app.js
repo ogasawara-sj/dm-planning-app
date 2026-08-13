@@ -1072,6 +1072,14 @@
     // ドラッグ中に上部ホットゾーンへ入ると Cover Flow を開く（別月へドロップ）
     $("#cfHot").addEventListener("dragover", e => { if (state.draggingMeasure) { e.preventDefault(); openCoverflow(true); } });
     $("#cfHot").addEventListener("dragenter", e => { if (state.draggingMeasure) e.preventDefault(); });
+    // ドラッグ中に「月をめくる」の枠の外へ出たら閉じる（=枠外に置いたら閉じる）
+    document.addEventListener("dragover", e => {
+      if (!cf.dragMode) return;
+      const ov = $("#coverflow"); if (!ov || !ov.classList.contains("open")) return;
+      const r = ov.getBoundingClientRect(); const pad = 24;
+      const inside = e.clientX >= r.left - pad && e.clientX <= r.right + pad && e.clientY >= r.top - pad && e.clientY <= r.bottom + pad;
+      if (!inside) { closeCoverflow(); cf.dragMode = false; }
+    });
     // ステージのドラッグscrub / キー操作（施策ドラッグ中はscrubしない）
     (() => {
       const st = $("#cfStage"); let down = false, sx = 0, ss = 0;
