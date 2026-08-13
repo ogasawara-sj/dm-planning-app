@@ -213,11 +213,13 @@
     { t: "種別", f: "kind", type: "cat" },
     { t: "取得", f: "listMethod", type: "cat" },
     { t: "送付", f: "delivery", type: "cat" },
-    { t: "LP", title: "LP作成（○＝作る／×＝作らない）", f: "lp", type: "cat" },
     { t: "P3/List", title: "P3/List", f: "p3", type: "num", hideGroup: "p3" },
     { t: "優先", f: "priority", type: "num", hideGroup: "p3" },
     { t: "件数", title: "想定件数", f: "estimatedCount", type: "num" },
-    { t: "素材コード", key: "code", hideGroup: "code", title: "素材コード（正式名の候補）" }, { t: "テスト検証" }, { t: "→ 正式名候補（編集可）" },
+    { t: "素材コード", key: "code", hideGroup: "code", title: "素材コード（正式名の候補）" },
+    { t: "→ 正式名候補（編集可）" },
+    { t: "LP", title: "LP作成（○＝作る／×＝作らない）", f: "lp", type: "cat" },
+    { t: "テスト検証" },
     { t: "リスト条件" }, { t: "" },
   ];
   function passFilters(m) {
@@ -442,14 +444,12 @@
     tr.append(td(pick(m, "kind", M.kinds, { class: "w-kind" })));
     tr.append(td(pick(m, "listMethod", M.listMethods, { class: "w-lm" })));
     tr.append(td(pick(m, "delivery", M.deliveryTypes, { class: "w-souf" })));
-    tr.append(td(lpToggle(m), "c-lp"));
     if (state.showP3) {
       tr.append(td(numField(m, "p3", true, "w-p3")));
       tr.append(td(field(m, "priority", { class: "w-pri", type: "number", min: "1", placeholder: "—" })));
     }
     tr.append(td(numField(m, "estimatedCount", false, "w-cnt")));
     if (state.showCode) { const codeCell = el("td", { class: "c-code", "data-code": m.id }); renderCodeCell(codeCell, m); tr.append(codeCell); }
-    const cmpCell = el("td", { class: "c-cmp", "data-cmp": m.id }); renderCmpCell(cmpCell, m); tr.append(cmpCell);
     // 正式名候補：編集可＋コピー
     const der = el("td", { class: "c-derived", "data-derived": m.id });
     const nin = el("input", { class: "namein", value: derive(m, state.month).fullName, title: "編集可。案件共有シートで確定後の正式名を貼り戻す用" });
@@ -457,6 +457,9 @@
     const cp = el("button", { class: "iconbtn copyname", title: "施策名（正式名）だけをコピー" }); cp.append(icon("clipboard-text"));
     cp.addEventListener("click", () => { if (navigator.clipboard) navigator.clipboard.writeText(nin.value).then(() => flash("施策名をコピーしました")).catch(() => {}); });
     der.append(nin, cp); tr.append(der);
+    // LP（正式名候補の右）／テスト検証（LPの右）
+    tr.append(td(lpToggle(m), "c-lp"));
+    const cmpCell = el("td", { class: "c-cmp", "data-cmp": m.id }); renderCmpCell(cmpCell, m); tr.append(cmpCell);
     tr.append(td(el("button", { class: "btn tiny icononly", title: "リスト条件を開く", onclick: () => openDrawer(m.id) }, icon("adjustments-horizontal")), "c-cond"));
     const moveBtn = el("button", { class: "iconbtn", title: "別のセクションへ移動" }); moveBtn.append(icon("arrows-move"));
     moveBtn.addEventListener("click", e => { e.stopPropagation(); openMoveMenu(key, m.id, moveBtn); });
