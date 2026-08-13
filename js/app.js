@@ -11,6 +11,7 @@
     drawerId: null, sort: { field: "", dir: "asc" }, filters: {}, dragId: null, dragKey: null,
     expanded: {}, showCode: false, showP3: false,
     draggingMeasure: false, dragMeasure: null,
+    selected: new Set(), dragBatch: null,
   };
   const cf = { data: [], cards: [], dots: [], sel: 0, dragMode: false };
   const uid = () => "m" + Math.random().toString(36).slice(2, 9);
@@ -261,6 +262,10 @@
     table.append(tb);
     wrap.append(el("div", { class: "grid-scroll" }, table));
     wrap.append(el("div", { class: "add-bottom" }, el("button", { class: "btn small ghost", onclick: () => { list.push(emptyMeasure()); rerender(); } }, icon("plus"), " 施策を追加")));
+    // セクションの空きスペースへドロップ＝この末尾へ移動（別セクションからでも可）
+    wrap.addEventListener("dragover", e => { if (state.draggingMeasure) { e.preventDefault(); wrap.classList.add("drop-target"); } });
+    wrap.addEventListener("dragleave", e => { if (!wrap.contains(e.relatedTarget)) wrap.classList.remove("drop-target"); });
+    wrap.addEventListener("drop", e => { e.preventDefault(); wrap.classList.remove("drop-target"); handleRowDrop(key, null); });
     return wrap;
   }
   // 見出しセル（ソート/フィルタ対応列はクリックでメニュー）
@@ -369,21 +374,39 @@
     const tr = el("tr", { "data-row": m.id });
     if (state.drawerId === m.id) tr.classList.add("active-row");
     if (state.expanded[m.id]) tr.classList.add("expanded-row");
+    if (state.selected.has(m.id)) tr.classList.add("selected");
     const fc = familyColorOf(m);
     if (fc) { tr.classList.add("fam-row"); tr.style.background = fc.bg; tr.style.setProperty("--band", fc.band); }
     const td = (c, cls) => { const x = el("td", cls ? { class: cls } : {}); x.append(c); return x; };
     // ドラッグは左端ハンドルのみ（セル内のテキスト選択・コピーを妨げない）
     const sortActive = !!state.sort.field;
-    const handle = el("span", { class: "drag" + (sortActive ? " off" : ""), draggable: sortActive ? "false" : "true", title: sortActive ? "並び替え適用中は手動移動できません（『解除』後に可）" : "ドラッグで並べ替え" }, "⋮⋮");
-    handle.addEventListener("dragstart", e => { if (!state.editing || sortActive) { e.preventDefault(); return; } state.dragId = m.id; state.dragKey = key; state.dragMeasure = { id: m.id, key }; state.draggingMeasure = true; tr.classList.add("dragging"); $("#cfHot").classList.add("active"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", m.id); try { e.dataTransfer.setDragImage(tr, 40, 16); } catch (_) {} });
-    handle.addEventListener("dragend", () => { tr.classList.remove("dragging"); state.draggingMeasure = false; state.dragMeasure = null; $("#cfHot").classList.remove("active"); if (cf.dragMode) closeCoverflow(); });
+    const handle = el("span", { class: "drag" + (sortActive ? " off" : ""), draggable: sortActive ? "false" : "true", title: sortActive ? "並び替え適用中は手動移動できません（『解除』後に可）" : "ドラッグで並べ替え（複数選択中はまとめて移動）" }, "⋮⋮");
+    handle.addEventListener("dragstart", e => {
+      if (!state.editing || sortActive) { e.preventDefault(); return; }
+      const batch = (state.selected.has(m.id) && state.selected.size > 0) ? [...state.selected] : [m.id];
+      state.dragBatch = batch;
+      state.dragId = batch.length === 1 ? m.id : null;   // 単体のみ同一セクション内で並べ替え
+      state.dragKey = key; state.dragMeasure = { id: m.id, key }; state.draggingMeasure = true;
+      tr.classList.add("dragging"); $("#cfHot").classList.add("active");
+      e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", m.id);
+      try { e.dataTransfer.setDragImage(tr, 40, 16); } catch (_) {}
+    });
+    handle.addEventListener("dragend", () => { tr.classList.remove("dragging"); cleanupDrag(); if (cf.dragMode) closeCoverflow(); });
     // 展開トグル（裏側の施策概要/特典/RO版FIX）
     const hasNote = !!((m.note && m.note.trim()) || (m.benefit && m.benefit.trim()) || (m.roFixDate && m.roFixDate.trim()) || (m.products && m.products.trim()));
     const exp = el("button", { class: "expander" + (hasNote ? " hasnote" : "") + (state.expanded[m.id] ? " open" : ""), title: hasNote ? "詳細・メモあり（クリックで開閉）" : "詳細・メモを開く" });
     exp.append(icon(state.expanded[m.id] ? "chevron-down" : "chevron-right"));
     if (hasNote) exp.append(el("i", { class: "ti ti-note note-dot", "aria-hidden": "true" }));
     exp.addEventListener("click", () => { state.expanded[m.id] = !state.expanded[m.id]; rerender(); });
-    tr.append(el("td", { class: "c-drag" }, handle, exp));
+    const dragCell = el("td", { class: "c-drag" });
+    if (state.editing) {
+      const chk = el("input", { type: "checkbox", class: "rowsel", title: "選択（まとめて移動）" });
+      chk.checked = state.selected.has(m.id);
+      chk.addEventListener("change", () => { if (chk.checked) state.selected.add(m.id); else state.selected.delete(m.id); tr.classList.toggle("selected", chk.checked); updateSelBar(); });
+      dragCell.append(chk);
+    }
+    dragCell.append(handle, exp);
+    tr.append(dragCell);
     tr.append(td(statusChip(m, "runStatus", key, "施策実施"), "c-status"));
     tr.append(td(comboField(m, "baseName", baseSuggestions, { class: "w-name", placeholder: "施策名" })));
     tr.append(td(comboField(m, "owner", getOwners, { class: "w-own", placeholder: "担当" })));
@@ -410,8 +433,8 @@
     tr.append(td(el("div", { class: "ops" }, moveBtn,
       el("button", { class: "iconbtn", title: "この施策を1行まるごと複製", onclick: () => copyMeasure(key, m.id) }, icon("row-insert-bottom")),
       el("button", { class: "iconbtn danger", title: "この施策を削除", onclick: () => del(key, m.id) }, icon("trash"))), "c-ops"));
-    tr.addEventListener("dragover", e => { if (state.dragKey === key) e.preventDefault(); });
-    tr.addEventListener("drop", e => { e.preventDefault(); if (state.dragKey === key && state.dragId && state.dragId !== m.id) reorder(key, state.dragId, m.id); });
+    tr.addEventListener("dragover", e => { if (state.draggingMeasure) e.preventDefault(); });
+    tr.addEventListener("drop", e => { e.preventDefault(); e.stopPropagation(); handleRowDrop(key, m.id); });
     return tr;
   }
   function renderCodeCell(cell, m) {
@@ -473,6 +496,65 @@
     const [it] = l.splice(from, 1); let to = l.findIndex(x => x.id === targetId);
     if (to < 0) l.push(it); else l.splice(to, 0, it);
     rerender();
+  }
+  // ドラッグ状態のクリア
+  function cleanupDrag() { state.dragBatch = null; state.dragId = null; state.dragKey = null; state.dragMeasure = null; state.draggingMeasure = false; $("#cfHot").classList.remove("active"); }
+  function clearSel() { state.selected.clear(); updateSelBar(); rerender(); }
+  // 行/セクションへのドロップ処理（単体＝並べ替え、複数＝まとめて移動。別セクションへも可）
+  function handleRowDrop(toKey, targetId) {
+    if (!state.editing) { cleanupDrag(); return; }
+    const batch = state.dragBatch; if (!batch || !batch.length) { cleanupDrag(); return; }
+    if (batch.length === 1 && batch[0] === targetId) { cleanupDrag(); return; } // 自分自身へは何もしない
+    const multi = batch.length > 1;
+    moveBatch(batch, toKey, targetId);
+    if (multi) { state.selected.clear(); flash(`${batch.length}件を「${SEC_LABEL[toKey]}」へ移動しました`); }
+    cleanupDrag(); rerender();
+  }
+  // 複数施策を toKey セクションへ（beforeId の前に）移動。別セクションをまたいでも順序を保つ
+  function moveBatch(ids, toKey, beforeId) {
+    const idset = new Set(ids);
+    const picked = [];
+    ["active", "carryNext", "carryFuture"].forEach(k => {
+      state.model[k] = state.model[k].filter(m => { if (idset.has(m.id)) { picked.push(m); return false; } return true; });
+    });
+    if (!picked.length) return;
+    const target = state.model[toKey];
+    let idx = target.length;
+    if (beforeId && !idset.has(beforeId)) { const bi = target.findIndex(m => m.id === beforeId); if (bi >= 0) idx = bi; }
+    target.splice(idx, 0, ...picked);
+  }
+  // 選択操作バー（複数選択時に下部に表示）
+  function updateSelBar() {
+    let bar = $("#selBar");
+    if (!bar) { bar = el("div", { id: "selBar", class: "sel-bar" }); document.body.append(bar); }
+    const n = state.selected.size;
+    if (!state.editing || n === 0) { bar.classList.remove("show"); bar.innerHTML = ""; return; }
+    bar.innerHTML = "";
+    bar.append(el("span", { class: "sel-n" }, `${n}件を選択中`));
+    const mk = (k, lab) => el("button", { class: "btn small", onclick: () => { const ids = [...state.selected]; state.selected.clear(); moveBatch(ids, k, null); rerender(); flash(`${ids.length}件を「${lab}」へ移動しました`); } }, "→ " + lab);
+    bar.append(mk("active", "今月実施"), mk("carryNext", "次月持越し"), mk("carryFuture", "今後へ持越し"));
+    bar.append(el("button", { class: "btn small ghost onwhite", onclick: clearSel }, "選択解除"));
+    bar.classList.add("show");
+  }
+  // 複数施策を別の月へ移動（コピー元＝現在の月）
+  async function moveBatchToMonth(ids, targetMonth) {
+    if (!state.editing || !targetMonth) return;
+    if (targetMonth === state.month) { flash("同じ月です"); return; }
+    const idset = new Set(ids);
+    const picked = [];
+    ["active", "carryNext", "carryFuture"].forEach(k => state.model[k].forEach(m => { if (idset.has(m.id)) picked.push(m); }));
+    if (!picked.length) return;
+    const clones = picked.map(src => { const c = JSON.parse(JSON.stringify(src)); c.id = uid(); c.codeStatus = "未確定"; c.num = ""; c.officialName = ""; c.testValidated = false; c.compareBaseId = ""; return c; });
+    const raw = await S.readMonth(targetMonth);
+    const tgt = normalize(raw ? JSON.parse(JSON.stringify(raw)) : emptyModel(targetMonth));
+    tgt.active.push(...clones); tgt.updatedAt = new Date().toISOString(); tgt.updatedBy = state.user;
+    await S.writeMonth(targetMonth, tgt);
+    ["active", "carryNext", "carryFuture"].forEach(k => state.model[k] = state.model[k].filter(m => !idset.has(m.id)));
+    ids.forEach(id => state.selected.delete(id));
+    state.model.updatedAt = new Date().toISOString(); state.model.updatedBy = state.user;
+    await S.writeMonth(state.month, state.model); state.mtime = await S.monthMtime(state.month);
+    rerender();
+    flash(`${window.monthLabel(targetMonth)} へ ${picked.length}件 移動しました`);
   }
   const SEC_LABEL = { active: "今月実施", carryNext: "次月持越し", carryFuture: "今後へ持越し" };
   function moveMeasure(fromKey, id, toKey) {
@@ -552,8 +634,8 @@
       const open = el("button", { class: "cf-open", onclick: e => { e.stopPropagation(); selectMonthFromCF(d.month); } }, d.month === state.month ? "表示中" : "この月を開く ↗");
       c.append(open);
       c.addEventListener("click", () => { if (i !== cf.sel) { cf.sel = i; positionCF(); } });
-      c.addEventListener("dragover", e => { if (state.dragMeasure) { e.preventDefault(); if (cf.sel !== i) { cf.sel = i; positionCF(); } } });
-      c.addEventListener("drop", e => { e.preventDefault(); if (state.dragMeasure) dropMeasureToMonth(d.month); });
+      c.addEventListener("dragover", e => { if (state.draggingMeasure) { e.preventDefault(); if (cf.sel !== i) { cf.sel = i; positionCF(); } } });
+      c.addEventListener("drop", e => { e.preventDefault(); if (state.dragBatch) dropMeasureToMonth(d.month); });
       stage.append(c); return c;
     });
     cf.dots = cf.data.map((d, i) => { const dot = el("div", { class: "cf-dot", onclick: () => { cf.sel = i; positionCF(); } }); dotsEl.append(dot); return dot; });
@@ -574,10 +656,9 @@
   }
   async function selectMonthFromCF(month) { closeCoverflow(); if (month === state.month) return; await renderMonthSelect(); $("#monthSelect").value = month; await loadMonth(month); }
   async function dropMeasureToMonth(targetMonth) {
-    const dm = state.dragMeasure;
-    state.dragMeasure = null; state.draggingMeasure = false; $("#cfHot").classList.remove("active"); closeCoverflow();
-    if (dm && targetMonth !== state.month) await copyMoveToMonth(dm.key, dm.id, targetMonth, "move");
-    else if (dm && targetMonth === state.month) flash("同じ月です");
+    const batch = state.dragBatch ? [...state.dragBatch] : [];
+    cleanupDrag(); closeCoverflow();
+    if (batch.length) await moveBatchToMonth(batch, targetMonth);
   }
   // 行の下に開く詳細（施策の裏側データ：施策概要・特典・RO版FIX）
   function detailRow(key, m) {
@@ -673,18 +754,19 @@
     const root = $("#board"); root.innerHTML = "";
     if (!S.isConnected()) { root.append(el("div", { class: "placeholder" }, "右上「📁 共有フォルダに接続」で、チームの共有フォルダを選んでください。保存データ（各月のJSON）がそこに読み書きされます。")); return; }
     if (!state.model) { root.append(el("div", { class: "placeholder" }, "「対象月」で月を選ぶか、「＋ 新規月」で作成してください。")); return; }
+    if (!state.editing && state.selected.size) state.selected.clear();   // 閲覧モードでは選択を解除
     computeFamilyColors();
     root.append(renderMeasureSection("active", "今月実施（施策）", "calendar-check"));
     root.append(renderMeasureSection("carryNext", "次月持越し", "arrow-forward-up"));
     root.append(renderMeasureSection("carryFuture", "今後へ持越し", "clock"));
     root.append(renderIdeas());
   }
-  function rerender() { renderSummary(); renderBody(); renderLockBar(); updateSavedAt(); updateTitle(); }
+  function rerender() { renderSummary(); renderBody(); renderLockBar(); updateSavedAt(); updateTitle(); updateSelBar(); }
   function updateTitle() { const e = $("#planTitle"); if (!e) return; e.textContent = state.model ? (state.model.title || "") : ""; }
 
   // ============ 行操作 ============
   function move(key, id, d) { if (!state.editing) return; const l = state.model[key]; const i = l.findIndex(x=>x.id===id), j=i+d; if(i<0||j<0||j>=l.length)return; [l[i],l[j]]=[l[j],l[i]]; rerender(); }
-  function del(key, id) { if (!state.editing) return; const l = state.model[key]; const i = l.findIndex(x=>x.id===id); if(i>=0){l.splice(i,1);rerender();} }
+  function del(key, id) { if (!state.editing) return; const l = state.model[key]; const i = l.findIndex(x=>x.id===id); if(i>=0){l.splice(i,1);state.selected.delete(id);rerender();} }
   function sortByPriority() {
     if (!state.editing) return;
     const scored = state.model.active.filter(m => m.baseName || m.num);
@@ -876,7 +958,7 @@
   // ============ 月の読み書き ============
   async function loadMonth(month) {
     if (!month) return;
-    state.month = month;
+    state.month = month; state.selected.clear();
     state.model = normalize((await S.readMonth(month)) || emptyModel(month));
     state.model.title = window.monthLabel(month) + " DM施策";   // タイトルは対象月から自動
     state.mtime = await S.monthMtime(month); state.editing = false; closeDrawer();
@@ -978,6 +1060,15 @@
     $("#cfBtn").addEventListener("click", () => openCoverflow(false));
     $("#cfClose").addEventListener("click", closeCoverflow);
     $("#coverflow").addEventListener("click", e => { if (e.target.id === "coverflow") closeCoverflow(); });
+    // 「月をめくる」の枠の外側をクリックしたら閉じる（ドラッグ移動中は除く）
+    document.addEventListener("mousedown", e => {
+      const ov = $("#coverflow");
+      if (!ov || !ov.classList.contains("open")) return;
+      if (state.draggingMeasure || cf.dragMode) return;
+      if (ov.contains(e.target)) return;
+      if (e.target.closest && e.target.closest("#cfBtn")) return;
+      closeCoverflow();
+    });
     // ドラッグ中に上部ホットゾーンへ入ると Cover Flow を開く（別月へドロップ）
     $("#cfHot").addEventListener("dragover", e => { if (state.draggingMeasure) { e.preventDefault(); openCoverflow(true); } });
     $("#cfHot").addEventListener("dragenter", e => { if (state.draggingMeasure) e.preventDefault(); });
