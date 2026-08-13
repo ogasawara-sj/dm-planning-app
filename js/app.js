@@ -333,6 +333,26 @@
       if (f === "estimatedCount") renderSummary();
     });
     inp.addEventListener("blur", () => { inp.value = fmtNum(m[f], decimal); });
+    // Excelから複数行を貼り付け＝この列を上から一気に埋める（先頭セルにペースト）
+    inp.addEventListener("paste", e => {
+      const txt = ((e.clipboardData || window.clipboardData) || {}).getData ? (e.clipboardData || window.clipboardData).getData("text") : "";
+      if (!txt) return;
+      const lines = txt.replace(/\r\n?/g, "\n").split("\n");
+      while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+      if (lines.length <= 1) return;   // 単一値は通常の貼り付けに任せる
+      e.preventDefault();
+      if (!state.editing) return;
+      const key = sectionOf(m);
+      const rows = sortView(state.model[key].filter(passFilters));
+      let start = rows.findIndex(x => x.id === m.id); if (start < 0) start = 0;
+      const clean = s => { let v = String(s).split("\t")[0].replace(decimal ? /[^0-9.]/g : /[^0-9]/g, ""); if (decimal) { const p = v.split("."); v = p.shift() + (p.length ? "." + p.join("") : ""); } return v; };
+      let n = 0, filled = 0;
+      for (let i = 0; i < lines.length && start + i < rows.length; i++) { rows[start + i][f] = clean(lines[i]); n++; }
+      filled = n;
+      rerender();
+      const over = lines.length - filled;
+      flash(`${filled}件を貼り付けました` + (over > 0 ? `（行が${over}件不足：先に行を追加してください）` : ""));
+    });
     return inp;
   }
   function pick(m, f, opts, attrs = {}) {
