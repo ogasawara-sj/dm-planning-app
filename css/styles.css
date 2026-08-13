@@ -242,16 +242,19 @@ tr.detail-row > td { background: #f5f6ff; }
 .cmp-help { font-size: 12px; color: var(--text-secondary); background: var(--accent-soft); border-radius: 8px; padding: 9px 12px; margin-bottom: 12px; line-height: 1.6; }
 
 /* 行展開の詳細（補足・メモ） */
-table.grid .detail-row > td { background: #f5f6ff; border-bottom: 2px solid var(--accent); box-shadow: inset 3px 0 0 var(--accent); padding: 6px 18px 6px 92px; }
+table.grid .detail-row > td { background: #f5f6ff; border-bottom: 2px solid var(--accent); box-shadow: inset 3px 0 0 var(--accent); padding: 6px 18px 2px 92px; }
 .detail .d-note { width: 100%; min-height: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 12px; font-family: inherit; resize: none; overflow: hidden; background: #fff; line-height: 1.5; }
 .detail-grid { display: grid; grid-template-columns: 340px 210px 220px 150px; gap: 14px; align-items: start; justify-content: start; }
 /* table.grid input（透明）に負けないよう詳細欄の入力は常に白枠で表示（空でも枠を出す） */
 table.grid .detail-grid input { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font-size: 12px; background: #fff; font-family: inherit; }
 .detail-grid .dw-lab { margin-bottom: 5px; }
-body.readonly .detail .d-note, body.readonly .detail-grid input { pointer-events: none; background: #f6f7f9; }
+body.readonly .detail .d-note, body.readonly table.grid .detail-grid input { pointer-events: none; background: #fff; }
 tr.dragging { opacity: .4; }
-tr.active-row td { background: var(--accent-soft) !important; }
-tr.active-row { box-shadow: inset 3px 0 0 var(--accent); }
+/* リスト条件を開いて選択中の施策：家系の水色と別系統の濃いめ藍色で、施策行＋折りたたみ行の両方を強調 */
+tr.active-row td { background: #c3caf8 !important; }
+tr.active-row { box-shadow: inset 4px 0 0 var(--accent) !important; }
+tr.active-row .c-drag { box-shadow: inset 4px 0 0 var(--accent) !important; }
+tr.active-detail > td { background: #dadefc !important; box-shadow: inset 4px 0 0 var(--accent) !important; border-bottom: 2px solid var(--accent) !important; }
 
 .c-status { width: 52px; text-align: center; padding-left: 12px; }
 .status { border: none; cursor: pointer; border-radius: 50%; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; }

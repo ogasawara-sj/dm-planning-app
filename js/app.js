@@ -694,6 +694,7 @@
   // 行の下に開く詳細（施策の裏側データ：施策概要・特典・RO版FIX）
   function detailRow(key, m) {
     const tr = el("tr", { class: "detail-row" });
+    if (state.drawerId === m.id) tr.classList.add("active-detail");
     const cell = el("td", { colspan: String(activeCols().length) });
     // 親と同系の淡色（さらに薄く）で内訳を表示
     const fc = familyColorOf(m);
@@ -832,12 +833,13 @@
   function openDrawer(id) {
     const m = findMeasure(id); if (!m) return;
     state.drawerId = id;
-    document.querySelectorAll("tr.active-row").forEach(t => t.classList.remove("active-row"));
-    const tr = document.querySelector(`tr[data-row="${id}"]`); if (tr) tr.classList.add("active-row");
+    document.querySelectorAll("tr.active-row, tr.active-detail").forEach(t => t.classList.remove("active-row", "active-detail"));
+    const tr = document.querySelector(`tr[data-row="${id}"]`);
+    if (tr) { tr.classList.add("active-row"); const det = tr.nextElementSibling; if (det && det.classList.contains("detail-row")) det.classList.add("active-detail"); }
     $("#drawer").classList.add("open"); $("#drawerScrim").classList.add("open");
     renderDrawer(m);
   }
-  function closeDrawer(){ state.drawerId=null; document.querySelectorAll("tr.active-row").forEach(t => t.classList.remove("active-row")); $("#drawer").classList.remove("open"); $("#drawerScrim").classList.remove("open"); }
+  function closeDrawer(){ state.drawerId=null; document.querySelectorAll("tr.active-row, tr.active-detail").forEach(t => t.classList.remove("active-row", "active-detail")); $("#drawer").classList.remove("open"); $("#drawerScrim").classList.remove("open"); }
   // 自己トグル式チップ：クリックで自分の on クラスを切替え、cb(新状態) を呼ぶ（editing時のみ）
   function chip(label, on, cb, cls){
     const b = el("button", { class: "pill " + (on?"on ":"") + (cls||"") }); b.textContent = label;
