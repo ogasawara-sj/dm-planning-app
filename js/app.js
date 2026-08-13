@@ -14,6 +14,7 @@
     selected: new Set(), dragBatch: null, dragCanceled: false, dragFromSel: false, dragMoved: false,
   };
   const cf = { data: [], cards: [], dots: [], sel: 0, dragMode: false, opening: false };
+  let saving = false, autoTimer = null;   // 自動保存の状態
   const uid = () => "m" + Math.random().toString(36).slice(2, 9);
 
   // 担当候補（この端末に保存。手入力で追加、×で削除）
@@ -39,7 +40,12 @@
 
   // 保存日時の表示
   function formatDT(iso) { if (!iso) return ""; const d = new Date(iso); const p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
-  function updateSavedAt() { const e = $("#savedAt"); if (!e) return; e.textContent = state.model && state.model.updatedAt ? `最終保存 ${formatDT(state.model.updatedAt)}${state.model.updatedBy ? "（" + state.model.updatedBy + "）" : ""}` : "未保存"; }
+  function updateSavedAt() {
+    const e = $("#savedAt"); if (!e) return;
+    if (saving) { e.className = "saved-at saving"; e.textContent = "保存中…"; return; }
+    if (state.model && state.model.updatedAt) { e.className = "saved-at ok"; e.textContent = `✓ 自動保存済み ${formatDT(state.model.updatedAt)}${state.model.updatedBy ? "（" + state.model.updatedBy + "）" : ""}`; }
+    else { e.className = "saved-at"; e.textContent = state.editing ? "自動保存されます" : ""; }
+  }
 
   function emptyCond() {
     return { products: [], ages: ["50代","60代","70代","80代","不明"], dUse: true, dFrom: 3, dTo: 8,
@@ -175,39 +181,52 @@
     if (state.month && months.includes(state.month)) sel.value = state.month;
   }
   async function renderLockBar() {
-    const bar = $("#lockBar"); const btn = $("#editBtn"), save = $("#saveBtn");
-    // 本番運用：共有フォルダ未接続なら編集不可
+    const view = $("#viewBtn"), edit = $("#editBtn"), note = $("#lockNote");
+    if (note) { note.textContent = ""; note.className = "lock-note"; }
+    const setMode = (editing) => { if (edit) edit.classList.toggle("on", editing); if (view) view.classList.toggle("on", !editing); };
+    // 未接続：閲覧のみ・編集不可
     if (!S.isConnected()) {
-      bar.className = "lockbar locked"; bar.innerHTML = ""; bar.append(icon("folder"), " 右上「共有フォルダに接続」で共有フォルダを選ぶと、閲覧・編集できます");
-      btn.textContent = "編集を開始"; btn.disabled = true; save.disabled = true;
+      setMode(false); if (edit) edit.disabled = true; if (view) view.disabled = true;
+      if (note) { note.className = "lock-note"; note.append(icon("folder"), " 共有フォルダに接続してください"); }
       document.body.classList.add("readonly"); return;
     }
     const lock = state.month ? await S.readLock(state.month) : null;
     const mine = lock && lock.user === state.user;
-    btn.disabled = false;
-    if (state.editing) { bar.className = "lockbar editing"; bar.innerHTML = ""; bar.append(icon("pencil"), " あなたが編集中（保存すると全員へ反映）"); btn.textContent = "編集を終了"; save.disabled = false; }
-    else if (lock && !mine) { bar.className = "lockbar locked"; bar.innerHTML = ""; bar.append(icon("lock"), ` ${lock.user} さんが編集中（閲覧のみ・自動更新）`); btn.textContent = "編集を開始"; btn.disabled = true; save.disabled = true; }
-    else { bar.className = "lockbar idle"; bar.textContent = state.model ? "閲覧モード" : "月を選ぶか新規作成してください"; btn.textContent = "編集を開始"; btn.disabled = !state.model; save.disabled = true; }
+    if (state.editing) {
+      setMode(true); if (edit) edit.disabled = false; if (view) view.disabled = false;
+    } else {
+      setMode(false); if (view) view.disabled = false;
+      const otherLocked = lock && !mine;
+      if (edit) edit.disabled = !state.model || otherLocked;
+      if (otherLocked && note) { note.className = "lock-note locked"; note.append(icon("lock"), ` ${lock.user} さんが使用しています（閲覧のみ）`); }
+    }
     document.body.classList.toggle("readonly", !state.editing);
   }
   function renderSummary() {
     const box = $("#summary"); if (!state.model) { box.innerHTML = ""; return; }
-    // 左「実施」が確定した施策だけを集計対象にする
-    const a = state.model.active.filter(m => m.runStatus === "確定");
+    // 名前が入っている施策だけを集計（実施○×には依存しない）
+    const a = state.model.active.filter(m => m.baseName && m.baseName.trim());
     const ro = a.filter(m => m.kind === "RO").length, test = a.filter(m => m.kind === "テスト").length;
     const cnt = a.reduce((s, m) => s + (parseInt(m.estimatedCount, 10) || 0), 0);
-    const unvalidated = a.filter(m => m.kind === "テスト" && !m.testValidated).length;
     box.innerHTML = "";
-    const chip = (l, v, cls) => el("div", { class: "chip " + (cls||"") }, el("span", { class: "chip-v" }, String(v)), el("span", { class: "chip-l" }, l));
-    box.append(chip("施策数（実施確定）", a.length), chip("RO本数", ro), chip("テスト本数", test),
-      chip("想定件数 合計", cnt.toLocaleString()),
-      chip("テスト検証 未設定", unvalidated, unvalidated ? "ng" : ""));
+    const chipEl = (l, v) => el("div", { class: "chip" }, el("span", { class: "chip-v" }, String(v)), el("span", { class: "chip-l" }, l));
+    box.append(chipEl("施策数（全体）", a.length), chipEl("RO本数", ro), chipEl("テスト本数", test), chipEl("想定件数 合計", cnt.toLocaleString()));
+    box.append(el("div", { class: "sum-spacer" }));
+    // 今月実施セクションの操作（見出しを廃止したのでここに集約）
+    const tools = el("div", { class: "sum-tools" });
+    const anyFilter = ["owner","kind","listMethod","delivery","lp"].some(f => state.filters[f] && state.filters[f].length);
+    if (state.sort.field || anyFilter) tools.append(el("button", { class: "btn small ghost", title: "並び替え・絞り込みを解除", onclick: () => { state.sort = { field: "", dir: "asc" }; state.filters = {}; rerender(); } }, icon("filter-off"), " 解除"));
+    tools.append(el("button", { class: "btn small toggle" + (state.showP3 ? " on" : ""), title: state.showP3 ? "P3/List・優先 を非表示" : "P3/List・優先 を表示", onclick: () => { state.showP3 = !state.showP3; rerender(); } }, icon(state.showP3 ? "eye" : "eye-off"), " P3/List・優先"));
+    tools.append(el("button", { class: "btn small toggle" + (state.showCode ? " on" : ""), title: state.showCode ? "素材コード を非表示" : "素材コード を表示", onclick: () => { state.showCode = !state.showCode; rerender(); } }, icon(state.showCode ? "eye" : "eye-off"), " 素材コード"));
+    tools.append(el("button", { class: "btn small", onclick: sortByPriority, title: "AI施策を先に、P3/Listが高い順に優先度1から振る" }, "P3/Listで優先度を設定"));
+    box.append(tools, el("span", { id: "savedAt", class: "saved-at" }));
+    updateSavedAt();
   }
 
   // ============ 施策テーブル ============
   // 列定義（f=フィールド, type=ソート/フィルタの型, cat=カテゴリ絞り込み対象）
   const COLS = [
-    { t: "" }, { t: "実施" },
+    { t: "No." }, { t: "" },
     { t: "施策名", f: "baseName", type: "text" },
     { t: "担当", f: "owner", type: "cat" },
     { t: "種別", f: "kind", type: "cat" },
@@ -246,15 +265,13 @@
   function renderMeasureSection(key, label, icn) {
     const list = state.model[key];
     const wrap = el("section", { class: "sec" });
-    const head = el("div", { class: "sec-head" }, el("h2", {}, icon(icn), " " + label, el("span", { class: "sec-count" }, `${list.length}`)));
-    const anyFilter = ["owner","kind","listMethod","delivery"].some(f => state.filters[f] && state.filters[f].length);
-    if (state.sort.field || anyFilter) head.append(el("button", { class: "btn small ghost", title: "並び替え・絞り込みを解除", onclick: () => { state.sort = { field: "", dir: "asc" }; state.filters = {}; rerender(); } }, icon("filter-off"), " 解除"));
-    if (key === "active") {
-      head.append(el("button", { class: "btn small toggle" + (state.showP3 ? " on" : ""), title: state.showP3 ? "P3/List・優先 を非表示にする" : "P3/List・優先 を表示する", onclick: () => { state.showP3 = !state.showP3; rerender(); } }, icon(state.showP3 ? "eye" : "eye-off"), " P3/List・優先"));
-      head.append(el("button", { class: "btn small toggle" + (state.showCode ? " on" : ""), title: state.showCode ? "素材コード を非表示にする" : "素材コード を表示する", onclick: () => { state.showCode = !state.showCode; rerender(); } }, icon(state.showCode ? "eye" : "eye-off"), " 素材コード"));
-      head.append(el("button", { class: "btn small", onclick: sortByPriority, title: "AI施策を先に、P3/Listが高い順に優先度1から振る" }, "P3/Listで優先度を設定"));
+    // 今月実施(active)は見出しを廃止（集計バーに統合）。持越しセクションのみ見出しを表示
+    if (key !== "active") {
+      const head = el("div", { class: "sec-head" }, el("h2", {}, icon(icn), " " + label, el("span", { class: "sec-count" }, `${list.length}`)));
+      const anyFilter = ["owner","kind","listMethod","delivery","lp"].some(f => state.filters[f] && state.filters[f].length);
+      if (state.sort.field || anyFilter) head.append(el("button", { class: "btn small ghost", title: "並び替え・絞り込みを解除", onclick: () => { state.sort = { field: "", dir: "asc" }; state.filters = {}; rerender(); } }, icon("filter-off"), " 解除"));
+      wrap.append(head);
     }
-    wrap.append(head);
     const table = el("table", { class: "grid" });
     const thr = el("tr", {});
     activeCols().forEach(c => thr.append(headerCell(c)));
@@ -265,7 +282,7 @@
     if (rows.length === 0) tb.append(el("tr", {}, el("td", { colspan: String(activeCols().length), class: "muted", style: "padding:10px" }, "該当する施策がありません")));
     table.append(tb);
     wrap.append(el("div", { class: "grid-scroll" }, table));
-    wrap.append(el("div", { class: "add-bottom" }, el("button", { class: "btn small ghost", onclick: () => { list.push(emptyMeasure()); rerender(); } }, icon("plus"), " 施策を追加")));
+    wrap.append(el("div", { class: "add-bottom" }, el("button", { class: "btn small ghost", onclick: () => { list.push(emptyMeasure()); markDirty(); rerender(); } }, icon("plus"), " 施策を追加")));
     // セクションの空きスペースへドロップ＝この末尾へ移動（別セクションからでも可）
     wrap.addEventListener("dragover", e => { if (state.draggingMeasure) { e.preventDefault(); wrap.classList.add("drop-target"); } });
     wrap.addEventListener("dragleave", e => { if (!wrap.contains(e.relatedTarget)) wrap.classList.remove("drop-target"); });
@@ -353,7 +370,7 @@
       let n = 0, filled = 0;
       for (let i = 0; i < lines.length && start + i < rows.length; i++) { rows[start + i][f] = clean(lines[i]); n++; }
       filled = n;
-      rerender();
+      markDirty(); rerender();
       const over = lines.length - filled;
       flash(`${filled}件を貼り付けました` + (over > 0 ? `（行が${over}件不足：先に行を追加してください）` : ""));
     });
@@ -393,6 +410,12 @@
     inp.addEventListener("blur", () => setTimeout(() => menu.classList.remove("open"), 150));
     wrap.append(inp, menu);
     return wrap;
+  }
+  // 表示中の並び順での通し番号（並べ替え後は上から1,2,3…に自動で振り直し）
+  function rowNo(key, m) {
+    const rows = sortView(state.model[key].filter(passFilters));
+    const i = rows.findIndex(x => x.id === m.id);
+    return i >= 0 ? i + 1 : "";
   }
   function row(key, m) {
     const tr = el("tr", { "data-row": m.id });
@@ -437,8 +460,8 @@
       dragCell.append(chk);
     }
     dragCell.append(handle, exp);
+    tr.append(el("td", { class: "c-no" }, String(rowNo(key, m))));
     tr.append(dragCell);
-    tr.append(td(statusChip(m, "runStatus", key, "施策実施"), "c-status"));
     tr.append(td(comboField(m, "baseName", baseSuggestions, { class: "w-name", placeholder: "施策名" })));
     tr.append(td(comboField(m, "owner", getOwners, { class: "w-own", placeholder: "担当" })));
     tr.append(td(pick(m, "kind", M.kinds, { class: "w-kind" })));
@@ -519,6 +542,7 @@
     });
   }
   function rerenderRow(key, m) {
+    markDirty();
     const tr = document.querySelector(`tr[data-row="${m.id}"]`); if (tr) tr.replaceWith(row(key, m));
     // この施策を比較元にしている行も更新
     ["active","carryNext","carryFuture"].forEach(k => state.model[k].forEach(mm => {
@@ -530,7 +554,7 @@
     const l = state.model[key]; const i = l.findIndex(x => x.id === id); if (i < 0) return;
     const c = JSON.parse(JSON.stringify(l[i]));
     c.id = uid(); c.num = ""; c.codeStatus = "未確定"; c.officialName = ""; c.compareBaseId = id; // 複製は元施策を比較元に
-    l.splice(i + 1, 0, c); rerender(); flash("直下に複製しました（比較元＝元の施策）");
+    l.splice(i + 1, 0, c); markDirty(); rerender(); flash("直下に複製しました（比較元＝元の施策）");
   }
   function reorder(key, dragId, targetId) {
     const l = state.model[key]; const from = l.findIndex(x => x.id === dragId); if (from < 0) return;
@@ -552,6 +576,7 @@
   }
   // 複数施策を toKey セクションへ（beforeId の前に）移動。別セクションをまたいでも順序を保つ
   function moveBatch(ids, toKey, beforeId) {
+    markDirty();
     const idset = new Set(ids);
     const picked = [];
     ["active", "carryNext", "carryFuture"].forEach(k => {
@@ -600,7 +625,7 @@
   function moveMeasure(fromKey, id, toKey) {
     if (!state.editing) return;
     const l = state.model[fromKey]; const i = l.findIndex(x => x.id === id); if (i < 0) return;
-    const [it] = l.splice(i, 1); state.model[toKey].push(it); rerender(); flash(`「${SEC_LABEL[toKey]}」へ移動しました`);
+    const [it] = l.splice(i, 1); state.model[toKey].push(it); markDirty(); rerender(); flash(`「${SEC_LABEL[toKey]}」へ移動しました`);
   }
   function openMoveMenu(key, id, anchor) {
     closeColMenu();
@@ -732,7 +757,7 @@
   function renderIdeas() {
     const wrap = el("section", { class: "sec" });
     wrap.append(el("div", { class: "sec-head" }, el("h2", {}, icon("bulb"), " アイデア候補", el("span",{class:"sec-count"},`${state.model.ideas.length}`)),
-      el("button", { class: "btn small ghost", onclick: () => { state.model.ideas.push({ id: uid(), text: "" }); rerender(); } }, "＋ 追加")));
+      el("button", { class: "btn small ghost", onclick: () => { state.model.ideas.push({ id: uid(), text: "" }); markDirty(); rerender(); } }, "＋ 追加")));
     const box = el("div", { class: "ideas" });
     state.model.ideas.forEach(it => box.append(el("div", { class: "idea" },
       field(it, "text", { class: "w-idea", placeholder: "思いついた企画メモ" }),
@@ -811,8 +836,8 @@
   function updateTitle() { const e = $("#planTitle"); if (!e) return; e.textContent = state.model ? (state.model.title || "") : ""; }
 
   // ============ 行操作 ============
-  function move(key, id, d) { if (!state.editing) return; const l = state.model[key]; const i = l.findIndex(x=>x.id===id), j=i+d; if(i<0||j<0||j>=l.length)return; [l[i],l[j]]=[l[j],l[i]]; rerender(); }
-  function del(key, id) { if (!state.editing) return; const l = state.model[key]; const i = l.findIndex(x=>x.id===id); if(i>=0){l.splice(i,1);state.selected.delete(id);rerender();} }
+  function move(key, id, d) { if (!state.editing) return; const l = state.model[key]; const i = l.findIndex(x=>x.id===id), j=i+d; if(i<0||j<0||j>=l.length)return; [l[i],l[j]]=[l[j],l[i]]; markDirty(); rerender(); }
+  function del(key, id) { if (!state.editing) return; const l = state.model[key]; const i = l.findIndex(x=>x.id===id); if(i>=0){l.splice(i,1);state.selected.delete(id);markDirty();rerender();} }
   function sortByPriority() {
     if (!state.editing) return;
     const scored = state.model.active.filter(m => m.baseName || m.num);
@@ -823,7 +848,7 @@
       return (parseFloat(y.p3) || 0) - (parseFloat(x.p3) || 0);
     });
     scored.forEach((m, i) => m.priority = i + 1);
-    rerender(); flash("AI優先→P3/List高い順で優先度1から振りました");
+    markDirty(); rerender(); flash("AI優先→P3/List高い順で優先度1から振りました");
   }
 
   // ============ フィールド入力（再描画せず） ============
@@ -857,7 +882,7 @@
   // 自己トグル式チップ：クリックで自分の on クラスを切替え、cb(新状態) を呼ぶ（editing時のみ）
   function chip(label, on, cb, cls){
     const b = el("button", { class: "pill " + (on?"on ":"") + (cls||"") }); b.textContent = label;
-    b.addEventListener("click", () => { if (!state.editing) return; const next = !b.classList.contains("on"); b.classList.toggle("on", next); cb(next); });
+    b.addEventListener("click", () => { if (!state.editing) return; const next = !b.classList.contains("on"); b.classList.toggle("on", next); cb(next); markDirty(); });
     return b;
   }
   function setIn(arr, v, on){ const i = arr.indexOf(v); if (on && i<0) arr.push(v); else if (!on && i>=0) arr.splice(i,1); }
@@ -1012,22 +1037,37 @@
     state.mtime = await S.monthMtime(month); state.editing = false; closeDrawer();
     rerender(); startPolling();
   }
-  async function startEditing() {
-    if (state.editing) { await S.clearLock(state.month); state.editing = false; rerender(); return; }
-    if (!S.isConnected()) { alert("共有フォルダに未接続です。右上「共有フォルダに接続」で共有フォルダを選んでから編集してください。"); return; }
-    if (!state.model) { alert("先に「対象月」で月を選ぶか、「＋新規月」で作成してください。"); return; }
+  // 編集モードに入る（1人だけ・ロック取得）
+  async function enterEdit() {
+    if (state.editing) return;
+    if (!S.isConnected()) { alert("共有フォルダに未接続です。右上「共有フォルダに接続」で共有フォルダを選んでください。"); return; }
+    if (!state.model) { alert("先に「対象月」で月を選ぶか、「＋新規」で作成してください。"); return; }
     if (!state.user) { alert("先に右上のお名前を入力してください。"); return; }
     const lock = await S.readLock(state.month);
-    if (lock && lock.user !== state.user) { alert(`${lock.user} さんが編集中です。`); return; }
+    if (lock && lock.user !== state.user) { alert(`${lock.user} さんが使用しています。編集できません（閲覧のみ）。`); await renderLockBar(); return; }
     await S.writeLock(state.month, { user: state.user, ts: Date.now() });
     state.editing = true; rerender();
   }
-  async function save() {
-    if (!state.editing || !state.model) return;
-    if (!S.isConnected()) { alert("共有フォルダに未接続のため保存できません。右上「共有フォルダに接続」で共有フォルダを選んでください。"); return; }
-    state.model.updatedAt = new Date().toISOString(); state.model.updatedBy = state.user;
-    await S.writeMonth(state.month, state.model);
-    state.mtime = await S.monthMtime(state.month); updateSavedAt(); flash("保存しました");
+  // 閲覧モードに戻る（確定保存＋ロック解除）
+  async function exitEdit() {
+    if (!state.editing) return;
+    await doAutoSave(true);
+    await S.clearLock(state.month);
+    state.editing = false; rerender();
+  }
+  // ===== 自動保存（Googleスプレッドシート風：手が止まって少ししたら保存） =====
+  function markDirty() { if (!state.editing) return; scheduleAutoSave(); }
+  function scheduleAutoSave() { clearTimeout(autoTimer); autoTimer = setTimeout(() => doAutoSave(), 1300); updateSavedAt(); }
+  async function doAutoSave(force) {
+    clearTimeout(autoTimer);
+    if (!state.editing || !state.model || !S.isConnected()) return;
+    saving = true; updateSavedAt();
+    try {
+      state.model.updatedAt = new Date().toISOString(); state.model.updatedBy = state.user;
+      await S.writeMonth(state.month, state.model);
+      state.mtime = await S.monthMtime(state.month);
+    } catch (e) { saving = false; updateSavedAt(); if (force) alert("保存に失敗しました：" + e.message); return; }
+    saving = false; updateSavedAt();
   }
   // ---- モーダル ----
   function closeModal() { const s = document.getElementById("modalScrim"); if (s) s.remove(); }
@@ -1137,9 +1177,14 @@
       st.addEventListener("keydown", e => { if (e.key === "ArrowLeft" && cf.sel > 0) { cf.sel--; positionCF(); } if (e.key === "ArrowRight" && cf.sel < cf.data.length - 1) { cf.sel++; positionCF(); } if (e.key === "Enter" && cf.data[cf.sel]) selectMonthFromCF(cf.data[cf.sel].month); if (e.key === "Escape") closeCoverflow(); });
       st.addEventListener("wheel", e => { e.preventDefault(); if (e.deltaY > 0 && cf.sel < cf.data.length - 1) { cf.sel++; positionCF(); } else if (e.deltaY < 0 && cf.sel > 0) { cf.sel--; positionCF(); } }, { passive: false });
     })();
-    $("#editBtn").addEventListener("click", startEditing);
-    $("#saveBtn").addEventListener("click", save);
+    $("#editBtn").addEventListener("click", enterEdit);
+    $("#viewBtn").addEventListener("click", exitEdit);
     $("#board").addEventListener("input", onInput);
+    // 自動保存：フィールド編集（表・ドロワー）を検知して保存予約
+    $("#board").addEventListener("input", markDirty);
+    $("#board").addEventListener("change", markDirty);
+    $("#drawer").addEventListener("input", markDirty);
+    $("#drawer").addEventListener("change", markDirty);
     // Enterで真下の同じ列へ移動（表計算風）
     $("#board").addEventListener("keydown", e => {
       if (e.key !== "Enter" || e.isComposing) return;
@@ -1155,7 +1200,8 @@
     });
     $("#drawerClose").addEventListener("click", closeDrawer);
     $("#drawerScrim").addEventListener("click", closeDrawer);
-    window.addEventListener("beforeunload", () => { if (state.editing) S.clearLock(state.month); });
+    window.addEventListener("beforeunload", () => { if (state.editing) { doAutoSave(true); S.clearLock(state.month); } });
+    window.addEventListener("blur", () => { if (state.editing) doAutoSave(); });   // 画面を離れたら即保存
     if (S.supported) { try { await S.tryRestore(); renderHeader(); } catch (e) {} }
     await renderMonthSelect();
     if (S.isConnected()) {

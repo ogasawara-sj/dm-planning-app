@@ -7,28 +7,12 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" />
-  <link rel="stylesheet" href="css/styles.css?v=32" />
+  <link rel="stylesheet" href="css/styles.css?v=33" />
 </head>
 <body class="readonly">
   <header class="topbar">
-    <div class="brand">
-      <div>
-        <div class="brand-title">DM企画サマリー</div>
-      </div>
-    </div>
-    <div class="top-actions">
-      <button id="connectBtn" class="btn ghost" title="社内共有フォルダに接続">📁 共有フォルダに接続</button>
-      <span id="folderStatus" class="folder-status">未接続</span>
-      <label class="user-field">お名前
-        <input id="userName" placeholder="例：担当者名" />
-      </label>
-    </div>
-  </header>
-
-  <div class="monthbar">
-    <label>対象月
-      <select id="monthSelect"></select>
-    </label>
+    <div class="brand"><div class="brand-title">DM企画サマリー</div></div>
+    <div class="mfield"><span class="mlabel">対象月</span><select id="monthSelect"></select></div>
     <button id="cfBtn" class="btn ghost cf-btn" title="月をめくる（Cover Flow）">
       <svg class="cf-ico" width="36" height="20" viewBox="0 0 36 20" fill="none" aria-hidden="true">
         <path d="M3 7.5 L7 6 L7 14 L3 12.5 Z" fill="currentColor" opacity=".22"/>
@@ -37,17 +21,21 @@
         <path d="M27 5.5 L22 3.5 L22 16.5 L27 14.5 Z" fill="currentColor" opacity=".48"/>
         <path d="M33 7.5 L29 6 L29 14 L33 12.5 Z" fill="currentColor" opacity=".22"/>
       </svg></button>
-    <button id="newMonthBtn" class="btn">＋ 新規月</button>
+    <button id="newMonthBtn" class="btn">＋ 新規</button>
     <span id="planTitle" class="plan-title"></span>
-    <span id="savedAt" class="saved-at">未保存</span>
+    <span id="lockNote" class="lock-note"></span>
     <div class="spacer"></div>
-    <button id="editBtn" class="btn primary" disabled>編集を開始</button>
-    <button id="saveBtn" class="btn accent" disabled>💾 保存</button>
-  </div>
+    <button id="connectBtn" class="btn ghost" title="社内共有フォルダに接続">📁 共有フォルダに接続</button>
+    <span id="folderStatus" class="folder-status">未接続</span>
+    <label class="user-field">お名前
+      <input id="userName" placeholder="例：担当者名" />
+    </label>
+    <div id="modeToggle" class="mode-toggle">
+      <button id="viewBtn" class="mt on">閲覧</button><button id="editBtn" class="mt">編集</button>
+    </div>
+  </header>
 
   <div id="cfHot" class="cf-hot">📆 別の月へ移すには、ここへドラッグ（Cover Flow が開きます）</div>
-
-  <div id="lockBar" class="lockbar idle">月を選ぶか新規作成してください</div>
 
   <div id="coverflow" class="cf-overlay" aria-hidden="true">
     <div class="cf-head"><div class="cf-title">月をめくる</div><button id="cfClose" class="iconbtn" title="閉じる">✕</button></div>
@@ -75,8 +63,8 @@
 
   <div id="toast" class="toast"></div>
 
-  <script src="js/masters.js?v=32"></script>
-  <script src="js/storage.js?v=32"></script>
-  <script src="js/app.js?v=32"></script>
+  <script src="js/masters.js?v=33"></script>
+  <script src="js/storage.js?v=33"></script>
+  <script src="js/app.js?v=33"></script>
 </body>
 </html>
