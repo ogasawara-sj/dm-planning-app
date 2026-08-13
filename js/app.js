@@ -11,7 +11,7 @@
     drawerId: null, sort: { field: "", dir: "asc" }, filters: {}, dragId: null, dragKey: null,
     expanded: {}, showCode: false, showP3: false,
     draggingMeasure: false, dragMeasure: null,
-    selected: new Set(), dragBatch: null,
+    selected: new Set(), dragBatch: null, dragCanceled: false,
   };
   const cf = { data: [], cards: [], dots: [], sel: 0, dragMode: false };
   const uid = () => "m" + Math.random().toString(36).slice(2, 9);
@@ -384,7 +384,7 @@
     handle.addEventListener("dragstart", e => {
       if (!state.editing || sortActive) { e.preventDefault(); return; }
       const batch = (state.selected.has(m.id) && state.selected.size > 0) ? [...state.selected] : [m.id];
-      state.dragBatch = batch;
+      state.dragBatch = batch; state.dragCanceled = false;
       state.dragId = batch.length === 1 ? m.id : null;   // 単体のみ同一セクション内で並べ替え
       state.dragKey = key; state.dragMeasure = { id: m.id, key }; state.draggingMeasure = true;
       tr.classList.add("dragging"); $("#cfHot").classList.add("active");
@@ -498,11 +498,11 @@
     rerender();
   }
   // ドラッグ状態のクリア
-  function cleanupDrag() { state.dragBatch = null; state.dragId = null; state.dragKey = null; state.dragMeasure = null; state.draggingMeasure = false; $("#cfHot").classList.remove("active"); }
+  function cleanupDrag() { state.dragBatch = null; state.dragId = null; state.dragKey = null; state.dragMeasure = null; state.draggingMeasure = false; state.dragCanceled = false; $("#cfHot").classList.remove("active"); }
   function clearSel() { state.selected.clear(); updateSelBar(); rerender(); }
   // 行/セクションへのドロップ処理（単体＝並べ替え、複数＝まとめて移動。別セクションへも可）
   function handleRowDrop(toKey, targetId) {
-    if (!state.editing) { cleanupDrag(); return; }
+    if (!state.editing || state.dragCanceled) { cleanupDrag(); return; }
     const batch = state.dragBatch; if (!batch || !batch.length) { cleanupDrag(); return; }
     if (batch.length === 1 && batch[0] === targetId) { cleanupDrag(); return; } // 自分自身へは何もしない
     const multi = batch.length > 1;
@@ -618,11 +618,12 @@
     const idx = cf.data.findIndex(d => d.month === state.month);
     cf.sel = idx >= 0 ? idx : cf.data.length - 1;
     renderCF();
-    ov.classList.add("open"); ov.setAttribute("aria-hidden", "false");
-    $("#cfDropHint").style.display = dragMode ? "block" : "none";
+    ov.classList.add("open"); ov.classList.toggle("dragmode", !!dragMode); ov.setAttribute("aria-hidden", "false");
+    const hint = $("#cfDropHint");
+    if (hint) { hint.style.display = dragMode ? "block" : "none"; hint.textContent = "月のカードにドロップで、その月へ移動します（枠の外に出すと、やめます）"; }
     if (!dragMode) setTimeout(() => $("#cfStage").focus(), 0);
   }
-  function closeCoverflow() { const ov = $("#coverflow"); if (ov) { ov.classList.remove("open"); ov.setAttribute("aria-hidden", "true"); } }
+  function closeCoverflow() { const ov = $("#coverflow"); if (ov) { ov.classList.remove("open", "dragmode"); ov.setAttribute("aria-hidden", "true"); } }
   function renderCF() {
     const stage = $("#cfStage"), dotsEl = $("#cfDots"); stage.innerHTML = ""; dotsEl.innerHTML = "";
     cf.cards = cf.data.map((d, i) => {
@@ -656,9 +657,10 @@
   }
   async function selectMonthFromCF(month) { closeCoverflow(); if (month === state.month) return; await renderMonthSelect(); $("#monthSelect").value = month; await loadMonth(month); }
   async function dropMeasureToMonth(targetMonth) {
+    const canceled = state.dragCanceled;
     const batch = state.dragBatch ? [...state.dragBatch] : [];
     cleanupDrag(); closeCoverflow();
-    if (batch.length) await moveBatchToMonth(batch, targetMonth);
+    if (!canceled && batch.length) await moveBatchToMonth(batch, targetMonth);
   }
   // 行の下に開く詳細（施策の裏側データ：施策概要・特典・RO版FIX）
   function detailRow(key, m) {
@@ -1069,16 +1071,16 @@
       if (e.target.closest && e.target.closest("#cfBtn")) return;
       closeCoverflow();
     });
-    // ドラッグ中に上部ホットゾーンへ入ると Cover Flow を開く（別月へドロップ）
-    $("#cfHot").addEventListener("dragover", e => { if (state.draggingMeasure) { e.preventDefault(); openCoverflow(true); } });
+    // ドラッグ中に上部ホットゾーンへ入ると Cover Flow を開く（別月へドロップ）。再入場でキャンセルを解除
+    $("#cfHot").addEventListener("dragover", e => { if (state.draggingMeasure) { e.preventDefault(); state.dragCanceled = false; openCoverflow(true); } });
     $("#cfHot").addEventListener("dragenter", e => { if (state.draggingMeasure) e.preventDefault(); });
-    // ドラッグ中に「月をめくる」の枠の外へ出たら閉じる（=枠外に置いたら閉じる）
+    // Cover Flow を開いてドラッグ中に、その枠の外へ出たら「移動をやめる」（枠外ドロップ＝キャンセル）
     document.addEventListener("dragover", e => {
       if (!cf.dragMode) return;
       const ov = $("#coverflow"); if (!ov || !ov.classList.contains("open")) return;
       const r = ov.getBoundingClientRect(); const pad = 24;
       const inside = e.clientX >= r.left - pad && e.clientX <= r.right + pad && e.clientY >= r.top - pad && e.clientY <= r.bottom + pad;
-      if (!inside) { closeCoverflow(); cf.dragMode = false; }
+      if (!inside) { if (!state.dragCanceled) { state.dragCanceled = true; flash("枠の外に出たので、移動をやめました（元の場所のまま）"); } closeCoverflow(); cf.dragMode = false; }
     });
     // ステージのドラッグscrub / キー操作（施策ドラッグ中はscrubしない）
     (() => {

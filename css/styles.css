@@ -83,6 +83,9 @@ body {
 .cf-st b { color: var(--accent-d); font-weight: 700; font-size: 14px; }
 .cf-open { display: none; margin: 0 14px 12px; align-items: center; justify-content: center; gap: 6px; background: var(--accent); color: #fff; border: none; border-radius: 9px; padding: 7px; font-size: 12px; font-weight: 700; cursor: pointer; }
 .cf-card.sel .cf-open { display: inline-flex; }
+/* ドラッグで別月へ移動中：中央のカードを「ここへ入る」ドロップ先として強調（開くボタンは隠す） */
+.cf-overlay.dragmode .cf-card.sel { outline: 3px solid var(--accent); outline-offset: 3px; box-shadow: 0 14px 40px rgba(47,126,224,.38); }
+.cf-overlay.dragmode .cf-open { display: none !important; }
 .cf-cur { text-align: center; font-size: 13px; color: var(--accent-d); font-weight: 700; margin-top: 4px; }
 .cf-dots { display: flex; gap: 6px; justify-content: center; margin-top: 8px; }
 .cf-dot { width: 8px; height: 8px; border-radius: 50%; background: #d7dbe4; cursor: pointer; transition: width .2s; }
