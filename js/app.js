@@ -943,10 +943,11 @@
   function renderCompare(m) {
     const box = el("div", {});
     box.append(el("div", { class: "cmp-help" }, "先に条件を決めたRO等を「比較元」に選ぶと、この施策の条件と自動照合します。内容をチームで確認し、下の「テスト検証OK」を押すと表のOK/NGに反映されます。"));
-    const list = state.model.active.concat(state.model.carryNext, state.model.carryFuture).filter(x => x.id !== m.id);
+    // 比較元は「対象月に入力済み（名前あり）の施策」だけを出す（空の初期行は除外）
+    const list = state.model.active.concat(state.model.carryNext, state.model.carryFuture).filter(x => x.id !== m.id && x.baseName && x.baseName.trim());
     const sel = el("select", {});
-    sel.append(el("option", { value: "" }, "（比較しない）"));
-    list.forEach(x => { const d = derive(x, state.month); sel.append(el("option", { value: x.id }, `${x.baseName||"(名称未設定)"}／${x.variant||x.kind}` + (d.confirmed?` [${d.materialCode}]`:""))); });
+    sel.append(el("option", { value: "" }, "（比較しない・新規はこのままでOK）"));
+    list.forEach(x => { const d = derive(x, state.month); sel.append(el("option", { value: x.id }, `${x.baseName}／${kindLabel(x)}` + (d.confirmed ? ` [${d.materialCode}]` : ""))); });
     sel.value = m.compareBaseId || "";
     sel.addEventListener("change", () => { if (!state.editing) return; m.compareBaseId = sel.value; updateCmpBanner(m); rerenderRow(sectionOf(m), m); });
     box.append(labeled("比較元（RO/テスト どれでも可）", sel));

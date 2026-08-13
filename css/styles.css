@@ -250,7 +250,7 @@ table.grid .detail-grid input { width: 100%; border: 1px solid var(--line); bord
 /* FIX時期（日付入力）はブラウザ標準だと縦に大きくなるので、他の入力欄と同じ高さに揃える */
 table.grid .detail-grid input[type="date"] { padding-top: 5px; padding-bottom: 5px; }
 .detail-grid .dw-lab { margin-bottom: 5px; }
-body.readonly .detail .d-note, body.readonly table.grid .detail-grid input { pointer-events: none; background: #f6f7f9; }
+body.readonly .detail .d-note, body.readonly table.grid .detail-grid input { pointer-events: none; background: #f6f7f9; border-color: #cbd2db !important; }
 tr.dragging { opacity: .4; }
 /* リスト条件を開いて選択中の施策：家系の水色と別系統の濃いめ藍色で、施策行＋折りたたみ行の両方を強調 */
 tr.active-row td { background: #c3caf8 !important; }
