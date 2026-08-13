@@ -52,7 +52,7 @@
   }
   function emptyMeasure() {
     return { id: uid(), baseName: "", owner: "", category: "DMB", runStatus: "未確定", codeStatus: "未確定", num: "",
-      kind: "RO", variant: "", media: "発送DM", listMethod: "AI", delivery: "郵便のみ", p3: "", priority: "",
+      kind: "RO", variant: "", media: "発送DM", listMethod: "AI", delivery: "郵便のみ", lp: "×", p3: "", priority: "",
       estimatedCount: "", products: "", benefit: "", note: "", roFixDate: "", officialName: "",
       compareBaseId: "", compareScope: "", testValidated: false, cond: emptyCond(), excl: emptyExcl() };
   }
@@ -74,6 +74,7 @@
       if (x.officialName == null) x.officialName = "";
       if (x.testValidated == null) x.testValidated = false;
       if (!x.delivery) x.delivery = "郵便のみ";
+      if (!x.lp) x.lp = "×";
     }));
     if (!m.ideas) m.ideas = [];
     return m;
@@ -212,6 +213,7 @@
     { t: "種別", f: "kind", type: "cat" },
     { t: "取得", f: "listMethod", type: "cat" },
     { t: "送付", f: "delivery", type: "cat" },
+    { t: "LP", title: "LP作成（○＝作る／×＝作らない）", f: "lp", type: "cat" },
     { t: "P3/List", title: "P3/List", f: "p3", type: "num", hideGroup: "p3" },
     { t: "優先", f: "priority", type: "num", hideGroup: "p3" },
     { t: "件数", title: "想定件数", f: "estimatedCount", type: "num" },
@@ -219,7 +221,7 @@
     { t: "リスト条件" }, { t: "" },
   ];
   function passFilters(m) {
-    for (const f of ["owner", "kind", "listMethod", "delivery"]) {
+    for (const f of ["owner", "kind", "listMethod", "delivery", "lp"]) {
       const allow = state.filters[f];
       if (allow && allow.length && !allow.includes(m[f] || "")) return false;
     }
@@ -440,6 +442,7 @@
     tr.append(td(pick(m, "kind", M.kinds, { class: "w-kind" })));
     tr.append(td(pick(m, "listMethod", M.listMethods, { class: "w-lm" })));
     tr.append(td(pick(m, "delivery", M.deliveryTypes, { class: "w-souf" })));
+    tr.append(td(lpToggle(m), "c-lp"));
     if (state.showP3) {
       tr.append(td(numField(m, "p3", true, "w-p3")));
       tr.append(td(field(m, "priority", { class: "w-pri", type: "number", min: "1", placeholder: "—" })));
@@ -488,6 +491,14 @@
     b.textContent = on ? "OK" : "NG";
     b.addEventListener("click", () => { if (!state.editing) return; m.testValidated = !m.testValidated; rerenderRow(sectionOf(m), m); renderSummary(); });
     cell.append(b);
+  }
+  // LP作成の要否：○＝作る／×＝作らない（クリックで切替）
+  function lpToggle(m) {
+    const on = m.lp === "○";
+    const b = el("button", { class: "lp-chip " + (on ? "on" : "off"), title: "LP作成：" + (on ? "作る（○）" : "作らない（×）") + "（クリックで切替）" });
+    b.textContent = on ? "○" : "×";
+    b.addEventListener("click", () => { if (!state.editing) return; m.lp = on ? "×" : "○"; rerenderRow(sectionOf(m), m); });
+    return b;
   }
   function statusChip(m, f, key, label) {
     const on = m[f] === "確定";

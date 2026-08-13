@@ -259,6 +259,12 @@ tr.active-row .c-drag { box-shadow: inset 4px 0 0 var(--accent) !important; }
 tr.active-detail > td { background: #dadefc !important; box-shadow: inset 4px 0 0 var(--accent) !important; border-bottom: 2px solid var(--accent) !important; }
 
 .c-status { width: 52px; text-align: center; padding-left: 12px; }
+/* LP作成（○/×）列：とても狭く */
+.c-lp { width: 30px; text-align: center; padding-left: 2px; padding-right: 2px; }
+.lp-chip { border: none; cursor: pointer; border-radius: 7px; width: 24px; height: 24px; font-size: 14px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.lp-chip.on { background: var(--ok-soft); color: var(--ok); }
+.lp-chip.off { background: #f0f2f5; color: #aeb4bd; }
+body.readonly .lp-chip { pointer-events: none; }
 .status { border: none; cursor: pointer; border-radius: 50%; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; }
 .status.ok { background: var(--ok-soft); color: var(--ok); }
 .status.pend { background: #f0f2f5; color: #aeb4bd; }
@@ -408,7 +414,7 @@ body.readonly .dw-prod .iconbtn, body.readonly .btn.tiny.ghost { display: none; 
 .brand-title { font-size: 21px; letter-spacing: .02em; }
 .logo { border-radius: 12px; }
 /* 月をめくる：Cover Flow を図式化したシルエット・アイコン */
-.cf-btn { display: inline-flex; align-items: center; gap: 8px; }
+.cf-btn { display: inline-flex; align-items: center; padding: 6px 12px; }
 .cf-ico { color: var(--accent); flex: none; transition: transform .2s ease, color .2s ease; }
 .cf-btn:hover .cf-ico { color: var(--accent-d); transform: translateY(-1px) scale(1.04); }
 .c-ops .iconbtn { border: 1px solid var(--line); border-radius: 9px; width: 30px; height: 30px; color: var(--muted); }
