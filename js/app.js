@@ -11,9 +11,9 @@
     drawerId: null, sort: { field: "", dir: "asc" }, filters: {}, dragId: null, dragKey: null,
     expanded: {}, showCode: false, showP3: false,
     draggingMeasure: false, dragMeasure: null,
-    selected: new Set(), dragBatch: null, dragCanceled: false,
+    selected: new Set(), dragBatch: null, dragCanceled: false, dragFromSel: false, dragMoved: false,
   };
-  const cf = { data: [], cards: [], dots: [], sel: 0, dragMode: false };
+  const cf = { data: [], cards: [], dots: [], sel: 0, dragMode: false, opening: false };
   const uid = () => "m" + Math.random().toString(36).slice(2, 9);
 
   // 担当候補（この端末に保存。手入力で追加、×で削除）
@@ -383,15 +383,22 @@
     const handle = el("span", { class: "drag" + (sortActive ? " off" : ""), draggable: sortActive ? "false" : "true", title: sortActive ? "並び替え適用中は手動移動できません（『解除』後に可）" : "ドラッグで並べ替え（複数選択中はまとめて移動）" }, "⋮⋮");
     handle.addEventListener("dragstart", e => {
       if (!state.editing || sortActive) { e.preventDefault(); return; }
-      const batch = (state.selected.has(m.id) && state.selected.size > 0) ? [...state.selected] : [m.id];
-      state.dragBatch = batch; state.dragCanceled = false;
+      const fromSel = state.selected.has(m.id) && state.selected.size > 0;
+      const batch = fromSel ? [...state.selected] : [m.id];
+      state.dragBatch = batch; state.dragCanceled = false; state.dragFromSel = fromSel; state.dragMoved = false;
       state.dragId = batch.length === 1 ? m.id : null;   // 単体のみ同一セクション内で並べ替え
       state.dragKey = key; state.dragMeasure = { id: m.id, key }; state.draggingMeasure = true;
       tr.classList.add("dragging"); $("#cfHot").classList.add("active");
       e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", m.id);
       try { e.dataTransfer.setDragImage(tr, 40, 16); } catch (_) {}
     });
-    handle.addEventListener("dragend", () => { tr.classList.remove("dragging"); cleanupDrag(); if (cf.dragMode) closeCoverflow(); });
+    handle.addEventListener("dragend", () => {
+      tr.classList.remove("dragging");
+      const fromSel = state.dragFromSel; const openCF = cf.dragMode;
+      cleanupDrag(); if (openCF) closeCoverflow();
+      // 選択から始めたドラッグは、移動でもキャンセル（枠外／Escape）でも終了時に必ず選択を解除
+      if (fromSel) { state.selected.clear(); rerender(); }
+    });
     // 展開トグル（裏側の施策概要/特典/RO版FIX）
     const hasNote = !!((m.note && m.note.trim()) || (m.benefit && m.benefit.trim()) || (m.roFixDate && m.roFixDate.trim()) || (m.products && m.products.trim()));
     const exp = el("button", { class: "expander" + (hasNote ? " hasnote" : "") + (state.expanded[m.id] ? " open" : ""), title: hasNote ? "詳細・メモあり（クリックで開閉）" : "詳細・メモを開く" });
@@ -498,17 +505,16 @@
     rerender();
   }
   // ドラッグ状態のクリア
-  function cleanupDrag() { state.dragBatch = null; state.dragId = null; state.dragKey = null; state.dragMeasure = null; state.draggingMeasure = false; state.dragCanceled = false; $("#cfHot").classList.remove("active"); }
+  function cleanupDrag() { state.dragBatch = null; state.dragId = null; state.dragKey = null; state.dragMeasure = null; state.draggingMeasure = false; state.dragCanceled = false; state.dragFromSel = false; state.dragMoved = false; $("#cfHot").classList.remove("active"); }
   function clearSel() { state.selected.clear(); updateSelBar(); rerender(); }
   // 行/セクションへのドロップ処理（単体＝並べ替え、複数＝まとめて移動。別セクションへも可）
   function handleRowDrop(toKey, targetId) {
-    if (!state.editing || state.dragCanceled) { cleanupDrag(); return; }
-    const batch = state.dragBatch; if (!batch || !batch.length) { cleanupDrag(); return; }
-    if (batch.length === 1 && batch[0] === targetId) { cleanupDrag(); return; } // 自分自身へは何もしない
-    const multi = batch.length > 1;
-    moveBatch(batch, toKey, targetId);
-    if (multi) { state.selected.clear(); flash(`${batch.length}件を「${SEC_LABEL[toKey]}」へ移動しました`); }
-    cleanupDrag(); rerender();
+    if (!state.editing || state.dragCanceled) return; // 後片付けは dragend で行う
+    const batch = state.dragBatch; if (!batch || !batch.length) return;
+    if (batch.length === 1 && batch[0] === targetId) return; // 自分自身へは何もしない
+    moveBatch(batch, toKey, targetId); state.dragMoved = true;
+    if (batch.length > 1) flash(`${batch.length}件を「${SEC_LABEL[toKey]}」へ移動しました`);
+    rerender();
   }
   // 複数施策を toKey セクションへ（beforeId の前に）移動。別セクションをまたいでも順序を保つ
   function moveBatch(ids, toKey, beforeId) {
@@ -612,8 +618,10 @@
   }
   async function openCoverflow(dragMode) {
     const ov = $("#coverflow");
+    if (cf.opening || ov.classList.contains("open")) return;   // 二重オープン防止（ドラッグ中のカクつき対策）
+    cf.opening = true;
     await cfLoad();
-    if (!cf.data.length) { flash("保存済みの月がありません。まず保存してください。"); return; }
+    if (!cf.data.length) { cf.opening = false; flash("保存済みの月がありません。まず保存してください。"); return; }
     cf.dragMode = !!dragMode;
     const idx = cf.data.findIndex(d => d.month === state.month);
     cf.sel = idx >= 0 ? idx : cf.data.length - 1;
@@ -621,9 +629,10 @@
     ov.classList.add("open"); ov.classList.toggle("dragmode", !!dragMode); ov.setAttribute("aria-hidden", "false");
     const hint = $("#cfDropHint");
     if (hint) { hint.style.display = dragMode ? "block" : "none"; hint.textContent = "月のカードにドロップで、その月へ移動します（枠の外に出すと、やめます）"; }
+    cf.opening = false;
     if (!dragMode) setTimeout(() => $("#cfStage").focus(), 0);
   }
-  function closeCoverflow() { const ov = $("#coverflow"); if (ov) { ov.classList.remove("open", "dragmode"); ov.setAttribute("aria-hidden", "true"); } }
+  function closeCoverflow() { const ov = $("#coverflow"); if (ov) { ov.classList.remove("open", "dragmode"); ov.setAttribute("aria-hidden", "true"); } cf.opening = false; }
   function renderCF() {
     const stage = $("#cfStage"), dotsEl = $("#cfDots"); stage.innerHTML = ""; dotsEl.innerHTML = "";
     cf.cards = cf.data.map((d, i) => {
@@ -659,8 +668,8 @@
   async function dropMeasureToMonth(targetMonth) {
     const canceled = state.dragCanceled;
     const batch = state.dragBatch ? [...state.dragBatch] : [];
-    cleanupDrag(); closeCoverflow();
-    if (!canceled && batch.length) await moveBatchToMonth(batch, targetMonth);
+    closeCoverflow();                                   // 後片付けは dragend、ここでは移動のみ実行
+    if (!canceled && batch.length) { state.dragMoved = true; await moveBatchToMonth(batch, targetMonth); }
   }
   // 行の下に開く詳細（施策の裏側データ：施策概要・特典・RO版FIX）
   function detailRow(key, m) {
