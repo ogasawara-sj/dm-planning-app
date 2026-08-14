@@ -12,6 +12,7 @@
     expanded: {}, showCode: false, showP3: false,
     draggingMeasure: false, dragMeasure: null,
     selected: new Set(), dragBatch: null, dragCanceled: false, dragFromSel: false, dragMoved: false,
+    saveError: "",
   };
   const cf = { data: [], cards: [], dots: [], sel: 0, dragMode: false, opening: false };
   let saving = false, autoTimer = null;   // 自動保存の状態
@@ -43,6 +44,7 @@
   function updateSavedAt() {
     const e = $("#savedAt"); if (!e) return;
     if (saving) { e.className = "saved-at saving"; e.textContent = "保存中…"; return; }
+    if (state.saveError) { e.className = "saved-at err"; e.textContent = "⚠ 保存できません：" + state.saveError; e.title = state.saveError; return; }
     if (state.model && state.model.updatedAt) { e.className = "saved-at ok"; e.textContent = `✓ 自動保存済み ${formatDT(state.model.updatedAt)}${state.model.updatedBy ? "（" + state.model.updatedBy + "）" : ""}`; }
     else { e.className = "saved-at"; e.textContent = state.editing ? "自動保存されます" : ""; }
   }
@@ -1062,12 +1064,18 @@
     clearTimeout(autoTimer);
     if (!state.editing || !state.model || !S.isConnected()) return;
     saving = true; updateSavedAt();
+    const stamp = new Date().toISOString();
     try {
-      state.model.updatedAt = new Date().toISOString(); state.model.updatedBy = state.user;
+      state.model.updatedAt = stamp; state.model.updatedBy = state.user;   // 書き込み成功時のみ有効な値
       await S.writeMonth(state.month, state.model);
       state.mtime = await S.monthMtime(state.month);
-    } catch (e) { saving = false; updateSavedAt(); if (force) alert("保存に失敗しました：" + e.message); return; }
-    saving = false; updateSavedAt();
+      saving = false; state.saveError = ""; updateSavedAt();
+    } catch (e) {
+      // 書き込み失敗：保存済み扱いにしない。理由を画面に出す
+      saving = false; state.saveError = (e && e.message) ? e.message : String(e); updateSavedAt();
+      console.error("[autosave] 保存に失敗:", e);
+      if (force) alert("保存に失敗しました：" + state.saveError);
+    }
   }
   // ---- モーダル ----
   function closeModal() { const s = document.getElementById("modalScrim"); if (s) s.remove(); }
