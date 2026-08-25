@@ -250,7 +250,16 @@
     table.append(el("thead", {}, thr));
     const tb = el("tbody", {});
     const rows = sortView(list.filter(passFilters));
-    rows.forEach(m => { tb.append(row(key, m)); if (state.expanded[m.id]) tb.append(detailRow(key, m)); });
+    rows.forEach((m, i) => {
+      const bn = (m.baseName || "").trim();
+      const next = rows[i + 1];
+      // 同じ施策名のかたまりの最後の行に、太めのグレー線で区切りを付ける（展開中の行は行内の色帯を優先し区切り線は付けない）
+      const isGroupEnd = bn && (!next || (next.baseName || "").trim() !== bn);
+      const tr = row(key, m);
+      if (isGroupEnd && !state.expanded[m.id]) tr.classList.add("group-end");
+      tb.append(tr);
+      if (state.expanded[m.id]) tb.append(detailRow(key, m));
+    });
     if (rows.length === 0) tb.append(el("tr", {}, el("td", { colspan: String(activeCols().length), class: "muted", style: "padding:10px" }, "該当する施策がありません")));
     table.append(tb);
     wrap.append(el("div", { class: "grid-scroll" }, table));
@@ -797,9 +806,9 @@
   function detailRow(key, m) {
     const tr = el("tr", { class: "detail-row" });
     const cell = el("td", { colspan: String(activeCols().length) });
-    // 親と同系の色帯だけを引き継ぐ（背景はモノトーンのまま）
+    // 親と同系の色（赤/青/緑系）の薄い背景＋色帯を引き継ぐ
     const fc = familyColorOf(m);
-    if (fc) { cell.style.boxShadow = "inset 6px 0 0 " + fc; cell.style.borderBottom = "2px solid " + fc; }
+    if (fc) { cell.style.boxShadow = "inset 6px 0 0 " + fc; cell.style.borderBottom = "2px solid " + fc; cell.style.background = lightenHex(fc, 0.85); }
     const box = el("div", { class: "detail" });
     const grid = el("div", { class: "detail-grid" });
     // 施策概要（メモ）：普段1行、入力に応じて自動で伸びる
@@ -862,6 +871,11 @@
     }));
   }
   function familyColorOf(m) { const key = colorKey(m.baseName); return key ? familyColors[key] : null; }
+  function lightenHex(hex, amt) {
+    const h = hex.replace("#", ""); const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
+    const mix = v => Math.round(v + (255 - v) * amt);
+    return `rgb(${mix(r)},${mix(g)},${mix(b)})`;
+  }
   // 施策名変更時：全行の色を即時に付け替え（再描画せずフォーカス維持）
   function applyFamilyColors() {
     computeFamilyColors();
@@ -875,8 +889,8 @@
         if (det && det.classList.contains("detail-row")) {
           const cell = det.querySelector("td");
           if (cell) {
-            if (fc) { cell.style.boxShadow = "inset 6px 0 0 " + fc; cell.style.borderBottom = "2px solid " + fc; }
-            else { cell.style.boxShadow = ""; cell.style.borderBottom = ""; }
+            if (fc) { cell.style.boxShadow = "inset 6px 0 0 " + fc; cell.style.borderBottom = "2px solid " + fc; cell.style.background = lightenHex(fc, 0.85); }
+            else { cell.style.boxShadow = ""; cell.style.borderBottom = ""; cell.style.background = ""; }
           }
         }
       }
