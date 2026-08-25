@@ -35,7 +35,8 @@
     if (decimal) {
       const parts = s.split(".");
       const intp = parts[0] === "" ? "" : Number(parts[0]).toLocaleString();
-      return parts.length > 1 ? intp + "." + parts.slice(1).join("") : intp;
+      if (parts.length > 1) { const num = parseFloat(s); if (!isNaN(num)) return num.toFixed(1); }   // 小数第1位まで表示
+      return intp;
     }
     const n = parseInt(s, 10); return isNaN(n) ? "" : n.toLocaleString();
   }
@@ -507,7 +508,13 @@
     if (state.showTest) { const cmpCell = el("td", { class: "c-cmp", "data-cmp": m.id }); renderCmpCell(cmpCell, m); tr.append(cmpCell); }
     const hlBtn = el("button", { class: "iconbtn hl-btn" + (m.highlight ? " on" : ""), title: m.highlight ? "重要マークを外す" : "重要な施策としてハイライト" });
     hlBtn.append(icon("highlight"));
-    hlBtn.addEventListener("click", () => { if (!state.editing) return; m.highlight = !m.highlight; rerenderRow(sectionOf(m), m); });
+    hlBtn.addEventListener("click", () => {
+      if (!state.editing) return;
+      const next = !m.highlight;
+      const n = applyToSelection(m, "highlight", next);
+      markDirty(); rerender();
+      if (n > 1) flash(`選択中の${n}件をまとめて変更しました`);
+    });
     const moveBtn = el("button", { class: "iconbtn", title: "別のセクションへ移動" }); moveBtn.append(icon("arrows-move"));
     moveBtn.addEventListener("click", e => { e.stopPropagation(); openMoveMenu(key, m.id, moveBtn); });
     tr.append(td(el("div", { class: "ops" }, hlBtn, moveBtn,
@@ -565,7 +572,12 @@
     const on = confirmed;
     const tog = el("button", { class: "ministat " + (on ? "ok" : "pend"), title: "素材コード：" + (on ? "確定" : "未確定") + "（クリックで切替）" });
     tog.append(icon(on ? "circle-check" : "circle-dashed"));
-    tog.addEventListener("click", () => { if (!state.editing) return; m.codeStatus = on ? "未確定" : "確定"; rerenderRow(sectionOf(m), m); renderSummary(); });
+    tog.addEventListener("click", () => {
+      if (!state.editing) return;
+      const n = applyToSelection(m, "codeStatus", on ? "未確定" : "確定");
+      markDirty(); rerender();
+      if (n > 1) flash(`選択中の${n}件をまとめて変更しました`);
+    });
     cell.append(tog);
   }
   // テスト検証：RO等は「—」、テストは必ず OK / NG
@@ -575,15 +587,25 @@
     const on = !!m.testValidated;
     const b = el("button", { class: "valid-btn " + (on ? "ok" : "ng"), title: on ? "テスト検証OK（クリックで解除）" : "未検証（チーム確認後クリックでOKに）" });
     b.textContent = on ? "OK" : "NG";
-    b.addEventListener("click", () => { if (!state.editing) return; m.testValidated = !m.testValidated; rerenderRow(sectionOf(m), m); renderSummary(); });
+    b.addEventListener("click", () => {
+      if (!state.editing) return;
+      const n = applyToSelection(m, "testValidated", !on);
+      markDirty(); rerender();
+      if (n > 1) flash(`選択中の${n}件をまとめて変更しました`);
+    });
     cell.append(b);
   }
-  // LP作成の要否：○＝作る／×＝作らない（クリックで切替）
+  // LP作成の要否：○＝作る／×＝作らない（クリックで切替。素材コードのOKマークと同じ見た目）
   function lpToggle(m) {
     const on = m.lp === "○";
-    const b = el("button", { class: "lp-chip " + (on ? "on" : "off"), title: "LP作成：" + (on ? "作る（○）" : "作らない（×）") + "（クリックで切替）" });
-    b.textContent = on ? "○" : "×";
-    b.addEventListener("click", () => { if (!state.editing) return; m.lp = on ? "×" : "○"; rerenderRow(sectionOf(m), m); });
+    const b = el("button", { class: "ministat " + (on ? "ok" : "pend"), title: "LP作成：" + (on ? "作る（○）" : "作らない（×）") + "（クリックで切替）" });
+    b.append(icon(on ? "circle-check" : "circle-dashed"));
+    b.addEventListener("click", () => {
+      if (!state.editing) return;
+      const n = applyToSelection(m, "lp", on ? "×" : "○");
+      markDirty(); rerender();
+      if (n > 1) flash(`選択中の${n}件をまとめて変更しました`);
+    });
     return b;
   }
   function statusChip(m, f, key, label) {
@@ -659,7 +681,7 @@
     ["active", "carryNext", "carryFuture"].forEach(k => state.model[k].forEach(m => { if (state.selected.has(m.id)) sum += parseInt(m.estimatedCount, 10) || 0; }));
     bar.append(el("span", { class: "sel-n" }, `${n}件を選択中`));
     bar.append(el("span", { class: "sel-sum" }, `想定件数合計 ${sum.toLocaleString()}件`));
-    if (n > 1) bar.append(el("span", { class: "sel-hint" }, "種別・取得・送付を変えると選択中の行に一括反映"));
+    if (n > 1) bar.append(el("span", { class: "sel-hint" }, "種別・取得・送付・LP・素材コードOK・テスト検証・重要マークを変えると選択中の行に一括反映"));
     const mk = (k, lab) => el("button", { class: "btn small", onclick: () => { const ids = [...state.selected]; state.selected.clear(); moveBatch(ids, k, null); rerender(); flash(`${ids.length}件を「${lab}」へ移動しました`); } }, "→ " + lab);
     bar.append(mk("active", "今月実施"), mk("carryNext", "次月持越し"), mk("carryFuture", "今後へ持越し"));
     bar.append(el("button", { class: "btn small ghost onwhite", onclick: clearSel }, "選択解除"));
@@ -1006,6 +1028,12 @@
 
   function findMeasure(id){ for(const k of ["active","carryNext","carryFuture"]){const m=state.model[k].find(x=>x.id===id);if(m)return m;} return null; }
   function sectionOf(m){ for(const k of ["active","carryNext","carryFuture"]) if(state.model[k].includes(m)) return k; return "active"; }
+  // 複数選択中にトグル系の操作をしたら、選択中の行すべてへ同じ値を反映する（1件だけならその行だけ）
+  function applyToSelection(m, field, value) {
+    const ids = (state.selected.size > 1 && state.selected.has(m.id)) ? [...state.selected] : [m.id];
+    ids.forEach(id => { const row = findMeasure(id); if (row) row[field] = value; });
+    return ids.length;
+  }
   function labeled(label, node){ return el("div", { class: "dw-field" }, el("div", { class: "dw-lab" }, label), node); }
 
   // ============ 月の読み書き ============
