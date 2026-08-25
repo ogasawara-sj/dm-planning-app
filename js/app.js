@@ -63,6 +63,7 @@
     return { id: uid(), baseName: "", owner: "", category: "DMB", runStatus: "未確定", codeStatus: "未確定", num: "",
       kind: "RO", variant: "", media: "発送DM", listMethod: "AI", delivery: "郵便のみ", lp: "×", p3: "", priority: "",
       estimatedCount: "", products: "", benefit: "", note: "", roFixDate: "", officialName: "",
+      supplement: "", origCode1: "", origCode2: "",
       compareBaseId: "", compareScope: "", testValidated: false, highlight: false, cond: emptyCond(), excl: emptyExcl() };
   }
   function emptyModel(month) {
@@ -457,7 +458,8 @@
       if (fromSel) { state.selected.clear(); rerender(); }
     });
     // 展開トグル（裏側の施策概要/特典/RO版FIX）
-    const hasNote = !!((m.note && m.note.trim()) || (m.benefit && m.benefit.trim()) || (m.roFixDate && m.roFixDate.trim()) || (m.products && m.products.trim()));
+    const hasNote = !!((m.note && m.note.trim()) || (m.benefit && m.benefit.trim()) || (m.roFixDate && m.roFixDate.trim()) || (m.products && m.products.trim())
+      || (m.supplement && m.supplement.trim()) || (m.origCode1 && m.origCode1.trim()) || (m.origCode2 && m.origCode2.trim()));
     const exp = el("button", { class: "expander" + (hasNote ? " hasnote" : "") + (state.expanded[m.id] ? " open" : ""), title: hasNote ? "詳細・メモあり（クリックで開閉）" : "詳細・メモを開く" });
     exp.append(icon(state.expanded[m.id] ? "chevron-down" : "chevron-right"));
     if (hasNote) exp.append(el("i", { class: "ti ti-note note-dot", "aria-hidden": "true" }));
@@ -819,9 +821,32 @@
     ta.addEventListener("input", () => { m.note = ta.value; grow(); });
     ta.addEventListener("blur", () => rerenderRow(key, m));
     wNote.append(ta); setTimeout(grow, 0);
-    const mk = (label, f, cls, type) => { const w = el("div", { class: "dw-field " + cls }); w.append(el("div", { class: "dw-lab" }, label)); const i = el("input", type ? { value: m[f] || "", type } : { value: m[f] || "", placeholder: "" }); i.addEventListener("input", () => { m[f] = i.value; }); i.addEventListener("blur", () => rerenderRow(key, m)); w.append(i); return w; };
-    // 並び：施策概要メモ → 掲載商品 → 特典 → FIX時期
-    grid.append(wNote, mk("掲載商品", "products", "col-prod"), mk("特典", "benefit", "col-benefit"), mk("FIX時期", "roFixDate", "col-fix", "date"));
+    const mk = (label, f, cls, opts = {}) => {
+      const w = el("div", { class: "dw-field " + cls });
+      w.append(el("div", { class: "dw-lab" }, label));
+      const i = el("input", { value: m[f] || "", placeholder: opts.placeholder || "" });
+      i.addEventListener("input", () => { m[f] = i.value; });
+      i.addEventListener("blur", () => rerenderRow(key, m));
+      if (opts.paste) attachFillDownPaste(i, m, (row, raw) => { row[f] = String(raw).split("\t")[0].trim(); });
+      w.append(i);
+      return w;
+    };
+    // 元素材コード①②：上下2行（DMB190くらいの文字数が入る幅）
+    const mkOrigCodes = () => {
+      const w = el("div", { class: "dw-field col-origcode" });
+      w.append(el("div", { class: "dw-lab" }, "元素材コード"));
+      const pair = el("div", { class: "origcode-pair" });
+      [["origCode1", "①DMB190"], ["origCode2", "②DMB190"]].forEach(([f, ph]) => {
+        const i = el("input", { class: "origcode-in", value: m[f] || "", placeholder: ph });
+        i.addEventListener("input", () => { m[f] = i.value; });
+        i.addEventListener("blur", () => rerenderRow(key, m));
+        pair.append(i);
+      });
+      w.append(pair);
+      return w;
+    };
+    // 並び：施策概要メモ → 元素材コード①② → 補足 → 掲載商品 → 特典 → FIX時期
+    grid.append(wNote, mkOrigCodes(), mk("補足", "supplement", "col-supp"), mk("掲載商品", "products", "col-prod"), mk("特典", "benefit", "col-benefit"), mk("FIX時期", "roFixDate", "col-fix", { placeholder: "yyyy/mm/dd", paste: true }));
     box.append(grid); cell.append(box); tr.append(cell); return tr;
   }
 

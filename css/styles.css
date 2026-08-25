@@ -251,7 +251,9 @@ tr.detail-row > td { background: #e2e5fb; }
 /* 行展開の詳細（補足・メモ） */
 table.grid .detail-row > td { background: #e2e5fb; border-bottom: 2px solid var(--accent); box-shadow: inset 3px 0 0 var(--accent); padding: 6px 18px 2px 92px; }
 .detail .d-note { width: 100%; min-height: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 12px; font-weight: 700; color: var(--ink); font-family: inherit; resize: none; overflow: hidden; background: #fff; line-height: 1.5; }
-.detail-grid { display: grid; grid-template-columns: 340px 260px 220px 150px; gap: 14px; align-items: start; justify-content: start; }
+.detail-grid { display: grid; grid-template-columns: 340px 90px 260px 260px 220px 150px; gap: 14px; align-items: start; justify-content: start; }
+.origcode-pair { display: flex; flex-direction: column; gap: 6px; }
+.origcode-in { font-family: "Inter", ui-monospace, monospace; }
 /* table.grid input（透明）に負けないよう詳細欄の入力は常に白枠で表示（空でも枠を出す）。施策概要メモと文字の濃さ・太さを揃える */
 table.grid .detail-grid input { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font-size: 12px; font-weight: 700; color: var(--ink); background: #fff; font-family: inherit; box-sizing: border-box; height: 31px; }
 /* FIX時期（日付入力）はブラウザ標準だと縦に大きくなるので、他の入力欄と同じ高さに揃える */
