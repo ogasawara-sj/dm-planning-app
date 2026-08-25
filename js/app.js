@@ -423,6 +423,8 @@
     const fc = familyColorOf(m);
     if (fc) { tr.classList.add("fam-row"); tr.style.setProperty("--band", fc); }
     if (prevBaseIn(key, m.id) === (m.baseName || "").trim() && (m.baseName || "").trim()) tr.classList.add("name-repeat");
+    const rno = rowNo(key, m);
+    if (rno % 2 === 0) tr.classList.add("stripe");   // 薄いシマシマ（施策行のみが対象。展開中の内訳行は数えない）
     const td = (c, cls) => { const x = el("td", cls ? { class: cls } : {}); x.append(c); return x; };
     // ドラッグは左端ハンドルのみ（セル内のテキスト選択・コピーを妨げない）
     const sortActive = !!state.sort.field;
@@ -469,7 +471,7 @@
       dragCell.append(chk);
     }
     dragCell.append(handle, exp);
-    tr.append(el("td", { class: "c-no" }, String(rowNo(key, m))));
+    tr.append(el("td", { class: "c-no" }, String(rno)));
     tr.append(dragCell);
     tr.append(td(comboField(m, "baseName", baseSuggestions, { class: "w-name", placeholder: "施策名" })));
     tr.append(td(comboField(m, "owner", getOwners, { class: "w-own", placeholder: "担当" })));
@@ -797,7 +799,7 @@
     const cell = el("td", { colspan: String(activeCols().length) });
     // 親と同系の色帯だけを引き継ぐ（背景はモノトーンのまま）
     const fc = familyColorOf(m);
-    if (fc) { cell.style.boxShadow = "inset 4px 0 0 " + fc; cell.style.borderBottom = "2px solid " + fc; }
+    if (fc) { cell.style.boxShadow = "inset 6px 0 0 " + fc; cell.style.borderBottom = "2px solid " + fc; }
     const box = el("div", { class: "detail" });
     const grid = el("div", { class: "detail-grid" });
     // 施策概要（メモ）：普段1行、入力に応じて自動で伸びる
@@ -830,10 +832,10 @@
   // No.横の色帯だけに使う（行の背景タイルは廃止＝モノトーン運用）
   let familyColors = {};
   const FAMPAL = {
-    red:   ["#e5484d", "#df3d7a", "#e0682f", "#c53a54", "#e07a4a"],
-    blue:  ["#2f7ee0", "#1499c9", "#4f63e0", "#3b74b8", "#2a8ad0"],
-    green: ["#2fa14a", "#63991f", "#12a07a", "#4d9a2a", "#39a15a"],
-    other: ["#6d5ef0", "#c98a1e", "#7b8794", "#8b5ee0"],
+    red:   ["#d1272d", "#c81f61", "#c94f18", "#a8203a", "#c85a29"],
+    blue:  ["#1c5fc2", "#0c7aa8", "#3446c4", "#295d9c", "#196fb0"],
+    green: ["#1c8235", "#4c7a12", "#0a8562", "#367c17", "#248442"],
+    other: ["#5642d6", "#a86c0c", "#5f6b78", "#7141c4"],
   };
   const FIXED = { "お誕生日":["red",0], "TRS下取":["blue",0], "TRS下取り":["blue",0], "RAH買い替え":["green",0], "RAH買替":["green",0] };
   // キーワード優先：TRS→青、RAH→緑、（TRS/RAHが無く）お誕生日/誕生→赤、それ以外→other
@@ -873,7 +875,7 @@
         if (det && det.classList.contains("detail-row")) {
           const cell = det.querySelector("td");
           if (cell) {
-            if (fc) { cell.style.boxShadow = "inset 4px 0 0 " + fc; cell.style.borderBottom = "2px solid " + fc; }
+            if (fc) { cell.style.boxShadow = "inset 6px 0 0 " + fc; cell.style.borderBottom = "2px solid " + fc; }
             else { cell.style.boxShadow = ""; cell.style.borderBottom = ""; }
           }
         }
@@ -970,11 +972,15 @@
   // ============ 月の読み書き ============
   async function loadMonth(month) {
     if (!month) return;
+    const sel = $("#monthSelect"); if (sel) sel.disabled = true;   // 読み込み中は触れないように（共有フォルダ読み取り待ち）
     state.month = month; state.selected.clear();
-    state.model = normalize((await S.readMonth(month)) || emptyModel(month));
+    // 内容と更新日時を同時に読みに行く（順番に読むより速い）
+    const [raw, mtime] = await Promise.all([S.readMonth(month), S.monthMtime(month)]);
+    state.model = normalize(raw || emptyModel(month));
     state.model.title = window.monthLabel(month) + " DM施策";   // タイトルは対象月から自動
-    state.mtime = await S.monthMtime(month); state.editing = false;
+    state.mtime = mtime; state.editing = false;
     rerender(); startPolling();
+    if (sel) sel.disabled = false;
   }
   // 編集モードに入る（1人だけ・ロック取得）
   async function enterEdit() {
@@ -982,6 +988,7 @@
     if (!S.isConnected()) { alert("共有フォルダに未接続です。右上「共有フォルダに接続」で共有フォルダを選んでください。"); return; }
     if (!state.model) { alert("先に「対象月」で月を選ぶか、「＋新規」で作成してください。"); return; }
     if (!state.user) { alert("先に右上のお名前を入力してください。"); return; }
+    const editBtnEl = $("#editBtn"); if (editBtnEl) editBtnEl.disabled = true;   // 確認中は連打防止＋反応した見た目に
     const lock = await S.readLock(state.month);
     if (lock && lock.user !== state.user) { alert(`${lock.user} さんが使用しています。編集できません（閲覧のみ）。`); await renderLockBar(); return; }
     await S.writeLock(state.month, { user: state.user, ts: Date.now() });

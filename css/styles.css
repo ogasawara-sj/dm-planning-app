@@ -170,6 +170,8 @@ table.grid { border-collapse: separate; border-spacing: 0; width: 100%; min-widt
 table.grid th { background: var(--panel-2); color: var(--faint); font-size: 10px; font-weight: 600; padding: 10px 8px; border-bottom: 1px solid var(--line);
   text-align: left; white-space: nowrap; position: sticky; top: 0; z-index: 1; letter-spacing: .03em; }
 table.grid td { padding: 7px 8px; border-bottom: 1px solid var(--line-2); vertical-align: middle; }
+/* 薄いシマシマ（施策の行だけを1,2,3…と数えて交互に。展開中の内訳行はカウントしない） */
+table.grid tr.stripe td { background: #f7f8fb; }
 table.grid tr:hover td { background: #fafbff; }
 table.grid input, table.grid select { width: 100%; border: 1px solid transparent; background: transparent; padding: 6px 8px; border-radius: 8px;
   font-size: 12.5px; font-family: inherit; color: var(--ink); }
@@ -225,7 +227,7 @@ tr.selected { box-shadow: inset 0 0 0 2px var(--accent); }
 /* 展開中の親行：系統色は維持しつつ、開いていることを示す（背景は上書きしない） */
 tr.expanded-row .expander { background: var(--accent); color: #fff; }
 /* 施策名ごとの色分け：行はモノトーンのまま、No.横に色帯だけを付ける */
-tr.fam-row .c-no { box-shadow: inset 4px 0 0 var(--band); }
+tr.fam-row .c-no { box-shadow: inset 6px 0 0 var(--band); }
 /* 重要マーク（Excelの黄色ハイライト相当） */
 tr.highlighted td { background: #fffbe0; }
 table.grid tr.highlighted:hover td { background: #fff6c4; }
