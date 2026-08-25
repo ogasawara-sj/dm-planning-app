@@ -171,7 +171,7 @@ table.grid th { background: var(--panel-2); color: var(--faint); font-size: 10px
   text-align: left; white-space: nowrap; position: sticky; top: 0; z-index: 1; letter-spacing: .03em; }
 table.grid td { padding: 7px 8px; border-bottom: 1px solid var(--line-2); vertical-align: middle; }
 /* 薄いシマシマ（施策の行だけを1,2,3…と数えて交互に。展開中の内訳行はカウントしない） */
-table.grid tr.stripe td { background: #f7f8fb; }
+table.grid tr.stripe td { background: #e9ebf2; }
 table.grid tr:hover td { background: #fafbff; }
 table.grid input, table.grid select { width: 100%; border: 1px solid transparent; background: transparent; padding: 6px 8px; border-radius: 8px;
   font-size: 12.5px; font-family: inherit; color: var(--ink); }
@@ -233,7 +233,7 @@ tr.highlighted td { background: #fffbe0; }
 table.grid tr.highlighted:hover td { background: #fff6c4; }
 .hl-btn.on { background: #fff3bf; color: #a16207; }
 /* 非色分け行を展開したときの内訳の既定色 */
-tr.detail-row > td { background: #f5f6ff; }
+tr.detail-row > td { background: #e2e5fb; }
 .detail-head { font-size: 12px; color: var(--accent-d); margin-bottom: 10px; }
 .detail-head b { font-weight: 700; }
 
@@ -248,7 +248,7 @@ tr.detail-row > td { background: #f5f6ff; }
 
 /* 比較の説明 */
 /* 行展開の詳細（補足・メモ） */
-table.grid .detail-row > td { background: #f5f6ff; border-bottom: 2px solid var(--accent); box-shadow: inset 3px 0 0 var(--accent); padding: 6px 18px 2px 92px; }
+table.grid .detail-row > td { background: #e2e5fb; border-bottom: 2px solid var(--accent); box-shadow: inset 3px 0 0 var(--accent); padding: 6px 18px 2px 92px; }
 .detail .d-note { width: 100%; min-height: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 12px; font-weight: 700; color: var(--ink); font-family: inherit; resize: none; overflow: hidden; background: #fff; line-height: 1.5; }
 .detail-grid { display: grid; grid-template-columns: 340px 260px 220px 150px; gap: 14px; align-items: start; justify-content: start; }
 /* table.grid input（透明）に負けないよう詳細欄の入力は常に白枠で表示（空でも枠を出す）。施策概要メモと文字の濃さ・太さを揃える */
