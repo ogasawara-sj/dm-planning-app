@@ -176,7 +176,7 @@ table.grid td { padding: 7px 8px; border-bottom: 1px solid var(--line-2); vertic
 /* 薄いシマシマ（施策の行だけを1,2,3…と数えて交互に。展開中の内訳行はカウントしない） */
 table.grid tr.stripe td { background: #eef0f5; }
 /* かたまり（同じ施策名）の最後の行に太めのグレー線で区切りを付ける */
-table.grid tr.group-end td { border-bottom: 2px solid #9aa1ad; }
+table.grid tr.group-end td { border-bottom: 4px solid #7d848f; }
 table.grid input, table.grid select { width: 100%; border: 1px solid transparent; background: transparent; padding: 6px 8px; border-radius: 8px;
   font-size: 12.5px; font-family: inherit; color: var(--ink); }
 table.grid input:hover, table.grid select:hover { border-color: var(--line); background: #fff; }
