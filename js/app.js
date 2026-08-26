@@ -1005,7 +1005,7 @@
   function move(key, id, d) { if (!state.editing) return; const l = state.model[key]; const i = l.findIndex(x=>x.id===id), j=i+d; if(i<0||j<0||j>=l.length)return; [l[i],l[j]]=[l[j],l[i]]; markDirty(); rerender(); }
   function del(key, id) { if (!state.editing) return; const l = state.model[key]; const i = l.findIndex(x=>x.id===id); if(i>=0){l.splice(i,1);state.selected.delete(id);markDirty();rerender();} }
   function sortByPriority() {
-    if (!state.editing) return;
+    if (!state.editing) { alert("編集モードにしてから実行してください。"); return; }
     // 施策名グループの先頭行（太字の行）だけを対象にする。2行目以降は優先度を出さない
     let prevBase = null;
     const tops = [];
