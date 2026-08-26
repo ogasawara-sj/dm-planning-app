@@ -879,6 +879,17 @@
       w.append(i);
       return w;
     };
+    // 改行可能なテキスト欄（普段1行、入力に応じて自動で伸びる）
+    const mkArea = (label, f, cls) => {
+      const w = el("div", { class: "dw-field " + cls });
+      w.append(el("div", { class: "dw-lab" }, label));
+      const ta2 = el("textarea", { class: "d-note", rows: "1", placeholder: "" }); ta2.value = m[f] || "";
+      const grow2 = () => { ta2.style.height = "auto"; ta2.style.height = Math.max(30, ta2.scrollHeight) + "px"; };
+      ta2.addEventListener("input", () => { m[f] = ta2.value; grow2(); });
+      ta2.addEventListener("blur", () => rerenderRow(key, m));
+      w.append(ta2); setTimeout(grow2, 0);
+      return w;
+    };
     // 元素材コード①②：上下2行（DMB190くらいの文字数が入る幅）
     const mkOrigCodes = () => {
       const w = el("div", { class: "dw-field col-origcode" });
@@ -909,7 +920,7 @@
     pnTa.addEventListener("blur", () => rerenderRow(key, m));
     wPrinterNote.append(pnTa); setTimeout(pnGrow, 0);
     // 並び：施策概要メモ → 元素材コード①② → 補足 → 掲載商品 → 特典 → FIX時期 → 仕様 → 補足_特別対応
-    grid.append(wNote, mkOrigCodes(), mk("補足", "supplement", "col-supp"), mk("掲載商品", "products", "col-prod"), mk("特典", "benefit", "col-benefit"), mk("FIX時期", "roFixDate", "col-fix", { placeholder: "yyyy/mm/dd", paste: true }), wSpec, wPrinterNote);
+    grid.append(wNote, mkOrigCodes(), mkArea("補足", "supplement", "col-supp"), mk("掲載商品", "products", "col-prod"), mk("特典", "benefit", "col-benefit"), mk("FIX時期", "roFixDate", "col-fix", { placeholder: "yyyy/mm/dd", paste: true }), wSpec, wPrinterNote);
     box.append(grid); cell.append(box); tr.append(cell); return tr;
   }
 
