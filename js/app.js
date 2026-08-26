@@ -1206,7 +1206,7 @@
       }
     };
     refreshFolderRow();
-    body.append(labeled("見積もり依頼の保存先（「01.DM」フォルダを選択。年度・月のフォルダは自動作成されます）", folderRow));
+    body.append(labeled("見積もり依頼の保存先（「01.DM」または「◯年度」フォルダを選択。年度・月のフォルダが無ければ自動作成、既にある場合は入れ子で作らずそこに保存します）", folderRow));
     const err = el("div", { class: "modal-err" });
     const genBtn = el("button", { class: "btn primary", onclick: async () => {
       if (!mailDate) { alert("投函日を入力してください。"); return; }
@@ -1224,10 +1224,16 @@
         }));
         const outBuf = await window.Estimate.build({ mailDate, rows: rowsData });
         const [yearFolder, monthFolder] = window.Estimate.subfolderName(mailDate);
-        const dir = await S.estGetSubfolder([yearFolder, monthFolder]);
+        // 接続先が既に「年度」フォルダ（または「月見積」フォルダ）そのものの場合は、
+        // 同名フォルダを入れ子で作らないようにその階層を省く
+        const connectedName = S.estFolderName();
+        let names = [yearFolder, monthFolder];
+        if (connectedName === monthFolder) names = [];
+        else if (connectedName === yearFolder) names = [monthFolder];
+        const dir = await S.estGetSubfolder(names);
         const fname = window.Estimate.filename(mailDate);
         await S.estWriteFile(dir, fname, outBuf);
-        flash(`見積もり依頼を保存しました：${yearFolder}/${monthFolder}/${fname}`);
+        flash(`見積もり依頼を保存しました：${connectedName}${names.length ? "/" + names.join("/") : ""}/${fname}`);
         closeModal();
       } catch (e) {
         err.textContent = "出力に失敗しました：" + (e && e.message ? e.message : String(e));
