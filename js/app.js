@@ -88,7 +88,7 @@
       // 旧データ互換：送付方法(選択式)→郵便割合(%)へ移行
       if (x.delivery === "郵便のみ" || x.delivery == null || x.delivery === "") x.delivery = "100";
       else if (x.delivery === "メール便のみ") x.delivery = "0";
-      else if (x.delivery === "郵便+メール便") x.delivery = "50";
+      else if (x.delivery === "郵便+メール便") x.delivery = "90";
       if (!x.lp) x.lp = "×";
     }));
     if (!m.ideas) m.ideas = [];
