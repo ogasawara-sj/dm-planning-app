@@ -95,6 +95,17 @@
     }));
     if (!m.ideas) m.ideas = [];
     if (m.mailDate == null) m.mailDate = "";
+    // 旧データ互換：「今後へ持越し」セクションと自由記述の「アイデア候補」を廃止し、
+    // 「次月持越し」＝アイデア欄に合流させる（1回だけ・以後は両方空のまま）
+    if (!m.carryNext) m.carryNext = [];
+    if (m.carryFuture && m.carryFuture.length) {
+      m.carryNext.push(...m.carryFuture);
+      m.carryFuture = [];
+    }
+    if (m.ideas && m.ideas.length) {
+      m.ideas.forEach(it => { if (it.text && it.text.trim()) { const em = emptyMeasure(); em.baseName = it.text.trim(); m.carryNext.push(em); } });
+      m.ideas = [];
+    }
     return m;
   }
 
@@ -727,7 +738,7 @@
     rerender();
     flash(`${window.monthLabel(targetMonth)} へ ${picked.length}件 移動しました`);
   }
-  const SEC_LABEL = { active: "今月実施", carryNext: "次月持越し", carryFuture: "今後へ持越し" };
+  const SEC_LABEL = { active: "今月実施", carryNext: "アイデア欄", carryFuture: "今後へ持越し" };
   function moveMeasure(fromKey, id, toKey) {
     if (!state.editing) return;
     const l = state.model[fromKey]; const i = l.findIndex(x => x.id === id); if (i < 0) return;
@@ -738,7 +749,7 @@
     const menu = el("div", { id: "colMenu", class: "col-menu" });
     menu.addEventListener("click", e => e.stopPropagation());   // メニュー内クリックで閉じない
     menu.append(el("div", { class: "cm-sep" }, "このシート内で移動"));
-    [["active","今月実施"],["carryNext","次月持越し"],["carryFuture","今後へ持越し"]].filter(([k]) => k !== key)
+    [["active","今月実施"],["carryNext","アイデア欄"]].filter(([k]) => k !== key)
       .forEach(([k, lab]) => menu.append(el("button", { class: "cm-item", onclick: () => { moveMeasure(key, id, k); closeColMenu(); } }, "→ " + lab)));
     // 別の月へ（既存の月のみ）
     S.listMonths().then(months => {
@@ -918,18 +929,6 @@
     box.append(grid); cell.append(box); tr.append(cell); return tr;
   }
 
-  function renderIdeas() {
-    const wrap = el("section", { class: "sec" });
-    wrap.append(el("div", { class: "sec-head" }, el("h2", {}, icon("bulb"), " アイデア候補", el("span",{class:"sec-count"},`${state.model.ideas.length}`)),
-      el("button", { class: "btn small ghost", onclick: () => { state.model.ideas.push({ id: uid(), text: "" }); markDirty(); rerender(); } }, "＋ 追加")));
-    const box = el("div", { class: "ideas" });
-    state.model.ideas.forEach(it => box.append(el("div", { class: "idea" },
-      field(it, "text", { class: "w-idea", placeholder: "思いついた企画メモ" }),
-      el("button", { class: "iconbtn danger", onclick: () => del("ideas", it.id) }, icon("x")))));
-    wrap.append(box);
-    return wrap;
-  }
-
   // ===== 施策名ごとの色分け（赤=お誕生日系 / 青=TRS系 / 緑=RAH系。主要は固定・派生は少しずらす） =====
   // No.横の色帯だけに使う（行の背景タイルは廃止＝モノトーン運用）
   let familyColors = {};
@@ -996,9 +995,7 @@
     if (!state.model) { root.append(el("div", { class: "placeholder" }, "「対象月」で月を選ぶか、「＋ 新規月」で作成してください。")); return; }
     computeFamilyColors();
     root.append(renderMeasureSection("active", "今月実施（施策）", "calendar-check"));
-    root.append(renderMeasureSection("carryNext", "次月持越し", "arrow-forward-up"));
-    root.append(renderMeasureSection("carryFuture", "今後へ持越し", "clock"));
-    root.append(renderIdeas());
+    root.append(renderMeasureSection("carryNext", "アイデア欄", "bulb"));
   }
   function rerender() { renderSummary(); renderBody(); renderLockBar(); updateSavedAt(); updateTitle(); updateSelBar(); updateMailDate(); }
   function updateTitle() { const e = $("#planTitle"); if (!e) return; e.textContent = state.model ? (state.model.title || "") : ""; }
