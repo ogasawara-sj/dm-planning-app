@@ -259,7 +259,7 @@ table.grid .detail-grid input { width: 100%; border: 1px solid var(--line); bord
 /* FIX時期（日付入力）はブラウザ標準だと縦に大きくなるので、他の入力欄と同じ高さに揃える */
 table.grid .detail-grid input[type="date"] { padding-top: 5px; padding-bottom: 5px; }
 .detail-grid .dw-lab { margin-bottom: 5px; }
-body.readonly .detail .d-note, body.readonly table.grid .detail-grid input { pointer-events: none; background: transparent !important; border-color: transparent !important; }
+body.readonly .detail .d-note, body.readonly table.grid .detail-grid input { pointer-events: none; background: transparent !important; border-color: var(--line) !important; }
 tr.dragging { opacity: .4; }
 /* ドラッグ中の挿入位置の目印線 */
 tr.drop-above td { box-shadow: inset 0 2px 0 var(--accent); }
