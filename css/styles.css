@@ -216,14 +216,12 @@ tr.selected { box-shadow: inset 0 0 0 2px var(--accent); }
 /* ドロップ先セクションのハイライト */
 .sec.drop-target { outline: 2px dashed var(--accent); outline-offset: 3px; border-radius: 14px; }
 /* 複数選択の操作バー */
-.sel-bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 70; display: none; gap: 8px; align-items: center;
-  background: #263042; color: #fff; padding: 9px 12px; border-radius: 14px; box-shadow: var(--sh-lg); }
+.sel-bar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 70; display: none; gap: 5px; align-items: center;
+  background: #263042; color: #fff; padding: 5px 9px; border-radius: 10px; box-shadow: var(--sh-lg); }
 .sel-bar.show { display: flex; animation: selin .18s ease; }
 @keyframes selin { from { opacity: 0; transform: translateX(-50%) translateY(16px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
-.sel-bar .sel-n { font-weight: 700; font-size: 13px; margin-right: 2px; }
-.sel-bar .sel-sum { font-size: 13px; color: #cfd6ff; margin-right: 6px; padding-right: 10px; border-right: 1px solid rgba(255,255,255,.25); }
-.sel-bar .sel-hint { font-size: 11px; color: #b7bedd; margin-right: 6px; }
-.sel-bar .btn { background: #fff; }
+.sel-bar .sel-sum { font-size: 12px; color: #cfd6ff; margin-right: 4px; }
+.sel-bar .btn { background: #fff; padding: 3px 9px; font-size: 11.5px; }
 .sel-bar .btn.ghost.onwhite { background: transparent; color: #fff; border-color: rgba(255,255,255,.4); }
 .expander { border: none; background: transparent; cursor: pointer; color: var(--muted); font-size: 15px; padding: 2px 3px; margin-left: 4px; border-radius: 6px; vertical-align: middle; position: relative; }
 .expander:hover { background: #eef0f3; color: var(--ink); }

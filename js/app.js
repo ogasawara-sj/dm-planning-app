@@ -699,16 +699,10 @@
     bar.innerHTML = "";
     let sum = 0;
     ["active", "carryNext", "carryFuture"].forEach(k => state.model[k].forEach(m => { if (state.selected.has(m.id)) sum += parseInt(m.estimatedCount, 10) || 0; }));
-    bar.append(el("span", { class: "sel-n" }, `${n}件を選択中`));
-    bar.append(el("span", { class: "sel-sum" }, `想定件数合計 ${sum.toLocaleString()}件`));
+    bar.append(el("span", { class: "sel-sum" }, `${n}件・${sum.toLocaleString()}件`));
     if (n > 1) {
       bar.append(el("button", { class: "btn small ghost onwhite", onclick: () => setSelExpanded(true) }, "▼ まとめて開く"));
       bar.append(el("button", { class: "btn small ghost onwhite", onclick: () => setSelExpanded(false) }, "▲ まとめて閉じる"));
-    }
-    if (state.editing) {
-      if (n > 1) bar.append(el("span", { class: "sel-hint" }, "種別・取得・郵便割合・LP・素材コードOK・テスト検証・重要マークを変えると選択中の行に一括反映"));
-      const mk = (k, lab) => el("button", { class: "btn small", onclick: () => { const ids = [...state.selected]; state.selected.clear(); moveBatch(ids, k, null); rerender(); flash(`${ids.length}件を「${lab}」へ移動しました`); } }, "→ " + lab);
-      bar.append(mk("active", "今月実施"), mk("carryNext", "次月持越し"), mk("carryFuture", "今後へ持越し"));
     }
     bar.append(el("button", { class: "btn small ghost onwhite", onclick: clearSel }, "選択解除"));
     bar.classList.add("show");
