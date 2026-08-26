@@ -62,7 +62,7 @@
   }
   function emptyMeasure() {
     return { id: uid(), baseName: "", owner: "", category: "DMB", runStatus: "未確定", codeStatus: "未確定", num: "",
-      kind: "RO", variant: "", media: "発送DM", listMethod: "AI", delivery: "郵便のみ", lp: "×", p3: "", priority: "",
+      kind: "RO", variant: "", media: "発送DM", listMethod: "AI", delivery: "100", lp: "×", p3: "", priority: "",
       estimatedCount: "", products: "", benefit: "", note: "", roFixDate: "", officialName: "",
       supplement: "", origCode1: "", origCode2: "",
       compareBaseId: "", compareScope: "", testValidated: false, highlight: false, cond: emptyCond(), excl: emptyExcl() };
@@ -85,7 +85,10 @@
       if (x.officialName == null) x.officialName = "";
       if (x.testValidated == null) x.testValidated = false;
       if (x.highlight == null) x.highlight = false;
-      if (!x.delivery) x.delivery = "郵便のみ";
+      // 旧データ互換：送付方法(選択式)→郵便割合(%)へ移行
+      if (x.delivery === "郵便のみ" || x.delivery == null || x.delivery === "") x.delivery = "100";
+      else if (x.delivery === "メール便のみ") x.delivery = "0";
+      else if (x.delivery === "郵便+メール便") x.delivery = "50";
       if (!x.lp) x.lp = "×";
     }));
     if (!m.ideas) m.ideas = [];
@@ -203,7 +206,7 @@
     { t: "担当", f: "owner", type: "cat" },
     { t: "種別", f: "kind", type: "cat" },
     { t: "取得", f: "listMethod", type: "cat" },
-    { t: "送付", f: "delivery", type: "cat" },
+    { t: "郵便割合", title: "郵便で発送する割合（％）。手入力（残りはメール便扱い）", f: "delivery", type: "num" },
     { t: "P3/List", title: "P3/List", f: "p3", type: "num", hideGroup: "p3" },
     { t: "優先", f: "priority", type: "num", hideGroup: "p3" },
     { t: "件数", title: "想定件数", f: "estimatedCount", type: "num" },
@@ -222,7 +225,7 @@
   }
   function sortView(rows) {
     const { field, dir } = state.sort; if (!field) return rows;
-    const num = ["p3", "priority", "estimatedCount"].includes(field);
+    const num = ["p3", "priority", "estimatedCount", "delivery"].includes(field);
     const val = m => num ? (parseFloat(m[field]) || 0) : String(m[field] || "");
     const r = rows.slice().sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * (dir === "desc" ? -1 : 1); });
     return r;
@@ -297,6 +300,15 @@
       const vals = [...new Set(state.model.active.concat(state.model.carryNext, state.model.carryFuture).map(m => m[c.f] || "").filter(v => v !== ""))];
       const cur = state.filters[c.f] || vals.slice();
       const checks = [];
+      const setAll = (allOn) => (e) => {
+        e.stopPropagation();
+        state.filters[c.f] = allOn ? null : [];
+        checks.forEach(({ b, v }) => { b.classList.toggle("on", allOn); b.textContent = (allOn ? "☑ " : "☐ ") + v; });
+        rerender();
+      };
+      menu.append(el("div", { class: "cm-btnrow" },
+        el("button", { class: "cm-mini", onclick: setAll(true) }, "☑ 全て選択"),
+        el("button", { class: "cm-mini", onclick: setAll(false) }, "☐ 全て外す")));
       vals.forEach(v => {
         const on = cur.includes(v);
         const b = el("button", { class: "cm-check" + (on ? " on" : ""), onclick: (e) => {
@@ -313,15 +325,6 @@
         checks.push({ b, v });
         menu.append(b);
       });
-      const setAll = (allOn) => (e) => {
-        e.stopPropagation();
-        state.filters[c.f] = allOn ? null : [];
-        checks.forEach(({ b, v }) => { b.classList.toggle("on", allOn); b.textContent = (allOn ? "☑ " : "☐ ") + v; });
-        rerender();
-      };
-      menu.append(el("div", { class: "cm-btnrow" },
-        el("button", { class: "cm-mini", onclick: setAll(true) }, "☑ 全て選択"),
-        el("button", { class: "cm-mini", onclick: setAll(false) }, "☐ 全て外す")));
     }
     // 担当列：候補（サジェスト）の管理
     if (c.f === "owner") {
@@ -378,6 +381,20 @@
       row[f] = v;
     });
     return inp;
+  }
+  // 郵便割合（％）：半角数字のみ・0〜100にクランプ。複数選択中は他の数値項目と同様に一括反映。
+  function deliveryField(m) {
+    const wrap = el("div", { class: "delivery-field" });
+    const inp = el("input", { class: "w-souf", inputmode: "numeric", value: m.delivery ?? "100", placeholder: "100", title: "郵便で発送する割合（％）。残りはメール便扱い（手入力）" });
+    const clamp = raw => { const v = raw.replace(/[^0-9]/g, ""); return v === "" ? "" : String(Math.min(100, parseInt(v, 10))); };
+    inp.addEventListener("input", () => { inp.value = clamp(inp.value); m.delivery = inp.value; });
+    inp.addEventListener("change", () => {
+      const n = applyToSelection(m, "delivery", inp.value);
+      if (n > 1) { rerender(); flash(`選択中の${n}件をまとめて変更しました`); }
+    });
+    attachFillDownPaste(inp, m, (row, raw) => { row.delivery = clamp(String(raw).split("\t")[0].trim()); });
+    wrap.append(inp, el("span", { class: "pct-suffix" }, "%"));
+    return wrap;
   }
   function pick(m, f, opts, attrs = {}) {
     const s = el("select", Object.assign({ "data-id": m.id, "data-field": f }, attrs));
@@ -488,7 +505,7 @@
     tr.append(td(comboField(m, "owner", getOwners, { class: "w-own", placeholder: "担当" })));
     tr.append(td(pick(m, "kind", M.kinds, { class: "w-kind" })));
     tr.append(td(pick(m, "listMethod", M.listMethods, { class: "w-lm" })));
-    tr.append(td(pick(m, "delivery", M.deliveryTypes, { class: "w-souf" })));
+    tr.append(td(deliveryField(m)));
     if (state.showP3) {
       tr.append(td(numField(m, "p3", true, "w-p3")));
       tr.append(td(field(m, "priority", { class: "w-pri", type: "number", min: "1", placeholder: "—" })));
@@ -686,7 +703,7 @@
       bar.append(el("button", { class: "btn small ghost onwhite", onclick: () => setSelExpanded(false) }, "▲ まとめて閉じる"));
     }
     if (state.editing) {
-      if (n > 1) bar.append(el("span", { class: "sel-hint" }, "種別・取得・送付・LP・素材コードOK・テスト検証・重要マークを変えると選択中の行に一括反映"));
+      if (n > 1) bar.append(el("span", { class: "sel-hint" }, "種別・取得・郵便割合・LP・素材コードOK・テスト検証・重要マークを変えると選択中の行に一括反映"));
       const mk = (k, lab) => el("button", { class: "btn small", onclick: () => { const ids = [...state.selected]; state.selected.clear(); moveBatch(ids, k, null); rerender(); flash(`${ids.length}件を「${lab}」へ移動しました`); } }, "→ " + lab);
       bar.append(mk("active", "今月実施"), mk("carryNext", "次月持越し"), mk("carryFuture", "今後へ持越し"));
     }
@@ -1015,8 +1032,8 @@
     let item = null;
     for (const k of ["active","carryNext","carryFuture","ideas"]) { item = state.model[k].find(x=>x.id===id); if(item)break; }
     if (!item) return;
-    // 複数選択中に「種別・取得・送付」を変えたら、選択中の行すべてに同じ値を一括反映する
-    if (["kind", "listMethod", "delivery"].includes(f) && state.selected.size > 1 && state.selected.has(id)) {
+    // 複数選択中に「種別・取得」を変えたら、選択中の行すべてに同じ値を一括反映する
+    if (["kind", "listMethod"].includes(f) && state.selected.size > 1 && state.selected.has(id)) {
       const val = t.value, n = state.selected.size;
       ["active", "carryNext", "carryFuture"].forEach(k => state.model[k].forEach(x => { if (state.selected.has(x.id)) x[f] = val; }));
       rerender(); flash(`選択中の${n}件をまとめて変更しました`);

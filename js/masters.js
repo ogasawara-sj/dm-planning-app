@@ -6,7 +6,6 @@ window.MASTERS = {
   owners: [],
   kinds: ["RO", "テスト"],
   listMethods: ["AI", "既ロ"],
-  deliveryTypes: ["メール便のみ", "郵便のみ", "郵便+メール便"],
   genders: ["不問", "男性", "女性"],
   fValues: ["F1", "F2以上"],
   ages: ["40代", "50代", "60代", "70代", "80代", "不明"],

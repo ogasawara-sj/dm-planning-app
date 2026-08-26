@@ -178,14 +178,16 @@ table.grid input, table.grid select { width: 100%; border: 1px solid transparent
   font-size: 12.5px; font-family: inherit; color: var(--ink); }
 table.grid input:hover, table.grid select:hover { border-color: var(--line); background: #fff; }
 /* 種別・取得・送付：背景はタグ風のまま、文字は施策名と同じ（色=var(--ink)・太さ400・12.5px）に統一 */
-table.grid select.w-kind, table.grid select.w-lm, table.grid select.w-souf { background: #f1f4f8; color: var(--ink); font-weight: 400; border-radius: 8px; padding: 5px 6px; }
-table.grid select.w-kind:hover, table.grid select.w-lm:hover, table.grid select.w-souf:hover, table.grid select.w-kind:focus, table.grid select.w-lm:focus, table.grid select.w-souf:focus { background: #fff; }
+table.grid select.w-kind, table.grid select.w-lm, table.grid input.w-souf { background: #f1f4f8; color: var(--ink); font-weight: 400; border-radius: 8px; padding: 5px 6px; }
+table.grid select.w-kind:hover, table.grid select.w-lm:hover, table.grid input.w-souf:hover, table.grid select.w-kind:focus, table.grid select.w-lm:focus, table.grid input.w-souf:focus { background: #fff; }
 table.grid input:focus, table.grid select:focus { border-color: var(--accent); background: #fff; outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
 
 .w-name { min-width: 168px; } .w-own { min-width: 76px; }
 .w-kind, .w-lm { min-width: 78px; font-size: 12.5px; line-height: 1.4; }
 .w-p3 { min-width: 56px; } .w-pri { min-width: 34px; } .w-cnt { min-width: 56px; }
-.w-souf { min-width: 96px; }
+.delivery-field { display: inline-flex; align-items: center; gap: 3px; }
+.w-souf { min-width: 40px; width: 40px; text-align: right; }
+.pct-suffix { color: var(--muted); font-size: 12px; }
 /* 担当・施策名は折り返さず全文を出す。件数は半角6桁が入ればOK */
 table.grid input.w-own { width: 76px; }
 table.grid input.w-cnt { width: 70px; }
