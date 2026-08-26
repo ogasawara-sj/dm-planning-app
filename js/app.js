@@ -472,16 +472,15 @@
       rerender();
     });
     const dragCell = el("td", { class: "c-drag" });
-    if (state.editing) {
-      const chk = el("input", { type: "checkbox", class: "rowsel", title: "選択（ドラッグでまとめてチェック→件数合計を表示）" });
-      chk.checked = state.selected.has(m.id);
-      const setChecked = (on) => { chk.checked = on; if (on) state.selected.add(m.id); else state.selected.delete(m.id); tr.classList.toggle("selected", on); updateSelBar(); };
-      chk.addEventListener("change", () => setChecked(chk.checked));
-      // 上から下へドラッグすると、通った行のチェックを連続でON/OFFできる（Excelのドラッグ選択と同じ操作感）
-      chk.addEventListener("mousedown", (e) => { e.preventDefault(); state.dragCheckOn = !chk.checked; setChecked(state.dragCheckOn); document.body.classList.add("no-usersel"); });
-      chk.addEventListener("mouseenter", () => { if (state.dragCheckOn != null) setChecked(state.dragCheckOn); });
-      dragCell.append(chk);
-    }
+    // 選択チェックは編集/閲覧の両モードで表示（値の書き換えは引き続き編集モード限定）
+    const chk = el("input", { type: "checkbox", class: "rowsel", title: "選択（ドラッグでまとめてチェック→件数合計を表示）" });
+    chk.checked = state.selected.has(m.id);
+    const setChecked = (on) => { chk.checked = on; if (on) state.selected.add(m.id); else state.selected.delete(m.id); tr.classList.toggle("selected", on); updateSelBar(); };
+    chk.addEventListener("change", () => setChecked(chk.checked));
+    // 上から下へドラッグすると、通った行のチェックを連続でON/OFFできる（Excelのドラッグ選択と同じ操作感）
+    chk.addEventListener("mousedown", (e) => { e.preventDefault(); state.dragCheckOn = !chk.checked; setChecked(state.dragCheckOn); document.body.classList.add("no-usersel"); });
+    chk.addEventListener("mouseenter", () => { if (state.dragCheckOn != null) setChecked(state.dragCheckOn); });
+    dragCell.append(chk);
     dragCell.append(handle, exp);
     tr.append(el("td", { class: "c-no" }, String(rno)));
     tr.append(dragCell);
@@ -647,6 +646,7 @@
   // ドラッグ状態のクリア
   function cleanupDrag() { state.dragBatch = null; state.dragId = null; state.dragKey = null; state.dragMeasure = null; state.draggingMeasure = false; state.dragCanceled = false; state.dragFromSel = false; state.dragMoved = false; $("#cfHot").classList.remove("active"); clearDropMarks(); }
   function clearSel() { state.selected.clear(); updateSelBar(); rerender(); }
+  function setSelExpanded(on) { state.selected.forEach(id => { state.expanded[id] = on; }); rerender(); }
   // 行/セクションへのドロップ処理（単体＝並べ替え、複数＝まとめて移動。別セクションへも可）
   function handleRowDrop(toKey, targetId) {
     if (!state.editing || state.dragCanceled) return; // 後片付けは dragend で行う
@@ -675,15 +675,21 @@
     let bar = $("#selBar");
     if (!bar) { bar = el("div", { id: "selBar", class: "sel-bar" }); document.body.append(bar); }
     const n = state.selected.size;
-    if (!state.editing || n === 0) { bar.classList.remove("show"); bar.innerHTML = ""; return; }
+    if (n === 0) { bar.classList.remove("show"); bar.innerHTML = ""; return; }
     bar.innerHTML = "";
     let sum = 0;
     ["active", "carryNext", "carryFuture"].forEach(k => state.model[k].forEach(m => { if (state.selected.has(m.id)) sum += parseInt(m.estimatedCount, 10) || 0; }));
     bar.append(el("span", { class: "sel-n" }, `${n}件を選択中`));
     bar.append(el("span", { class: "sel-sum" }, `想定件数合計 ${sum.toLocaleString()}件`));
-    if (n > 1) bar.append(el("span", { class: "sel-hint" }, "種別・取得・送付・LP・素材コードOK・テスト検証・重要マークを変えると選択中の行に一括反映"));
-    const mk = (k, lab) => el("button", { class: "btn small", onclick: () => { const ids = [...state.selected]; state.selected.clear(); moveBatch(ids, k, null); rerender(); flash(`${ids.length}件を「${lab}」へ移動しました`); } }, "→ " + lab);
-    bar.append(mk("active", "今月実施"), mk("carryNext", "次月持越し"), mk("carryFuture", "今後へ持越し"));
+    if (n > 1) {
+      bar.append(el("button", { class: "btn small ghost onwhite", onclick: () => setSelExpanded(true) }, "▼ まとめて開く"));
+      bar.append(el("button", { class: "btn small ghost onwhite", onclick: () => setSelExpanded(false) }, "▲ まとめて閉じる"));
+    }
+    if (state.editing) {
+      if (n > 1) bar.append(el("span", { class: "sel-hint" }, "種別・取得・送付・LP・素材コードOK・テスト検証・重要マークを変えると選択中の行に一括反映"));
+      const mk = (k, lab) => el("button", { class: "btn small", onclick: () => { const ids = [...state.selected]; state.selected.clear(); moveBatch(ids, k, null); rerender(); flash(`${ids.length}件を「${lab}」へ移動しました`); } }, "→ " + lab);
+      bar.append(mk("active", "今月実施"), mk("carryNext", "次月持越し"), mk("carryFuture", "今後へ持越し"));
+    }
     bar.append(el("button", { class: "btn small ghost onwhite", onclick: clearSel }, "選択解除"));
     bar.classList.add("show");
   }
@@ -948,7 +954,6 @@
     const root = $("#board"); root.innerHTML = "";
     if (!S.isConnected()) { root.append(el("div", { class: "placeholder" }, "右上「📁 共有フォルダに接続」で、チームの共有フォルダを選んでください。保存データ（各月のJSON）がそこに読み書きされます。")); return; }
     if (!state.model) { root.append(el("div", { class: "placeholder" }, "「対象月」で月を選ぶか、「＋ 新規月」で作成してください。")); return; }
-    if (!state.editing && state.selected.size) state.selected.clear();   // 閲覧モードでは選択を解除
     computeFamilyColors();
     root.append(renderMeasureSection("active", "今月実施（施策）", "calendar-check"));
     root.append(renderMeasureSection("carryNext", "次月持越し", "arrow-forward-up"));

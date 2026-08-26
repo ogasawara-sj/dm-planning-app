@@ -356,10 +356,10 @@ tr.active-detail > td { background: #dadefc !important; box-shadow: inset 4px 0 
 .dw-field input, .dw-field select { border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font-size: 12px; font-family: inherit; background: #fff; }
 
 /* ---------- readonly ---------- */
-body.readonly table.grid input, body.readonly table.grid select,
+body.readonly table.grid input:not(.rowsel), body.readonly table.grid select,
 body.readonly .idea input, body.readonly .dw-field input, body.readonly .dw-field select,
 body.readonly .status { pointer-events: none; }
-body.readonly table.grid input, body.readonly table.grid select { background: transparent; border-color: transparent; }
+body.readonly table.grid input:not(.rowsel), body.readonly table.grid select { background: transparent; border-color: transparent; }
 body.readonly .sec-head > .btn, body.readonly .ops, body.readonly .add-bottom { display: none; }
 body.readonly .drag { pointer-events: none; opacity: .4; }
 body.readonly .namein { pointer-events: none; background: transparent; border-color: transparent; }
