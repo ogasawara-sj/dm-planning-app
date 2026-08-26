@@ -1199,6 +1199,10 @@
         folderRow.append(el("button", { class: "btn small", onclick: async () => {
           try { await S.estConnectFolder(); refreshFolderRow(); } catch (e) { alert(e.message); }
         } }, "📁 保存先フォルダに接続"));
+      } else {
+        folderRow.append(el("button", { class: "btn small ghost", onclick: async () => {
+          try { await S.estChangeFolder(); refreshFolderRow(); } catch (e) { alert(e.message); }
+        } }, "📁 フォルダを変更"));
       }
     };
     refreshFolderRow();

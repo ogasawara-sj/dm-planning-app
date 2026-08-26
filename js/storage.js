@@ -101,6 +101,15 @@ window.Storage = (function () {
   }
   function estFolderName() { return estDirHandle ? estDirHandle.name : null; }
   function estIsConnected() { return !!estDirHandle; }
+  // 接続済みでも別のフォルダに変更したい場合（前回選択を再利用せず必ずピッカーを開く）
+  async function estChangeFolder() {
+    if (!supported) throw new Error("このブラウザはフォルダ直結に未対応です（Edge/Chromeをご利用ください）。");
+    const h = await window.showDirectoryPicker({ id: "dmplan-estimate", mode: "readwrite" });
+    if (!(await requestPermission(h))) throw new Error("フォルダへの書き込み許可が必要です。");
+    estDirHandle = h; estPendingHandle = null;
+    await idbSet(IDB_KEY_EST, h);
+    return h.name;
+  }
   // 指定名のサブフォルダを取得（無ければ作成）。複数階層は配列で渡す
   async function estGetSubfolder(names) {
     if (!estDirHandle) throw new Error("見積もり依頼の出力先フォルダが未接続です。");
@@ -203,6 +212,6 @@ window.Storage = (function () {
     supported, tryRestore, connectFolder, folderName, isConnected,
     listMonths, readMonth, writeMonth, monthMtime,
     readLock, writeLock, clearLock,
-    estTryRestore, estConnectFolder, estFolderName, estIsConnected, estGetSubfolder, estWriteFile,
+    estTryRestore, estConnectFolder, estChangeFolder, estFolderName, estIsConnected, estGetSubfolder, estWriteFile,
   };
 })();

@@ -6,12 +6,14 @@
 window.Estimate = (function () {
   const MAX_ROWS = 24;               // テンプレートが対応する行数（row6〜row29）
   const FIRST_ROW = 6;
-  // 各列のセル style（テンプレートの既存スタイルをそのまま使う。row21以降はD/Fのstyleが変わる）
+  // 各列のセル style（テンプレート本来は row20 あたりから数式・書式(特にFの%表示)が抜けていたため、
+  // 全24行で同じ style に統一する）
   const styleOf = (col, row) => {
     if (col === "B") return row === 29 ? 55 : 50;
-    if (col === "D") return row <= 20 ? 58 : 51;
+    if (col === "C") return 51;
+    if (col === "D") return 58;
     if (col === "E") return 51;
-    if (col === "F") return row <= 20 ? 52 : 51;
+    if (col === "F") return 52;   // 0% 表示（numFmtId=9）を24行目まで維持
     if (col === "H") return 60;
     return 2;
   };
@@ -31,6 +33,10 @@ window.Estimate = (function () {
   function numCell(coord, style, num) {
     if (num == null || num === "" || isNaN(num)) return blankCell(coord, style);
     return `<c r="${coord}" s="${style}"><v>${num}</v></c>`;
+  }
+  // OOXMLの数式には先頭の "=" を付けない。キャッシュ値は入れず、開いた時に再計算させる（テンプレ側でfullCalcOnLoad="1"済み）
+  function formulaCell(coord, style, formula) {
+    return `<c r="${coord}" s="${style}"><f>${escXml(formula)}</f></c>`;
   }
   // 11月発送分以降：郵便料金（税込）を税抜+1.7円ベースに更新（税込=(税抜+1.7)*1.1）
   const PRICE_BUMP_FROM = "202611";
@@ -63,6 +69,7 @@ window.Estimate = (function () {
       const row = FIRST_ROW + i;
       const r = rows[i] || null;
       sheet1 = replaceCell(sheet1, `B${row}`, textCell(`B${row}`, styleOf("B", row), r ? r.name : ""));
+      sheet1 = replaceCell(sheet1, `C${row}`, formulaCell(`C${row}`, styleOf("C", row), `IF(D${row}="","",D${row}+20)`));
       sheet1 = replaceCell(sheet1, `D${row}`, numCell(`D${row}`, styleOf("D", row), r ? r.count : ""));
       sheet1 = replaceCell(sheet1, `E${row}`, textCell(`E${row}`, styleOf("E", row), r ? r.spec : ""));
       sheet1 = replaceCell(sheet1, `F${row}`, numCell(`F${row}`, styleOf("F", row), r ? r.pctPostal : ""));
