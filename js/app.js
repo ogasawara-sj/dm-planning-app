@@ -1244,7 +1244,14 @@
         const dir = await S.estGetSubfolder(names);
         const fname = window.Estimate.filename(mailDate);
         await S.estWriteFile(dir, fname, outBuf);
-        flash(`見積もり依頼を保存しました：${connectedName}${names.length ? "/" + names.join("/") : ""}/${fname}`);
+        // 保存に加えて、同じ内容をブラウザのダウンロードにも渡す（クリックでそのままExcelが開ける状態にする）。
+        // ブラウザからOSの既定アプリを直接起動することはできないため、ここまでが自動でできる範囲。
+        const blob = new Blob([outBuf], { type: "application/vnd.ms-excel.sheet.macroEnabled.12" });
+        const url = URL.createObjectURL(blob);
+        const a = el("a", { href: url, download: fname });
+        document.body.append(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        flash(`見積もり依頼を保存しました：${connectedName}${names.length ? "/" + names.join("/") : ""}/${fname}（ダウンロードからも開けます）`);
         closeModal();
       } catch (e) {
         err.textContent = "出力に失敗しました：" + (e && e.message ? e.message : String(e));
