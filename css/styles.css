@@ -235,7 +235,7 @@ tr.fam-row .c-no { box-shadow: inset 6px 0 0 var(--band); }
 /* 重要マーク（Excelの黄色ハイライト相当） */
 tr.highlighted td { background: #fffbe0; }
 table.grid tr.highlighted:hover td { background: #fff6c4; }
-.hl-btn.on { background: #fff3bf; color: #a16207; }
+.hl-btn.on, .hl-btn.on:hover { background: #ffe066 !important; color: #7c4a03 !important; box-shadow: 0 0 0 3px rgba(255, 199, 0, .35); }
 /* 非色分け行を展開したときの内訳の既定色 */
 tr.detail-row > td { background: #e2e5fb; }
 .detail-head { font-size: 12px; color: var(--accent-d); margin-bottom: 10px; }
