@@ -9,6 +9,9 @@ window.Storage = (function () {
   const LS_PREFIX = "dmplan:";           // localStorage キー接頭辞
   const IDB_KEY = "dirHandle";           // フォルダハンドル保存キー
   let dirHandle = null;                  // 接続中の共有フォルダ
+  const IDB_KEY_EST = "estDirHandle";    // 見積もり依頼の出力先フォルダ（DMの年度フォルダ想定）
+  let estDirHandle = null;
+  let estPendingHandle = null;
 
   // ---- IndexedDB (フォルダハンドルの永続化) ----
   function idb() {
@@ -76,6 +79,41 @@ window.Storage = (function () {
 
   function folderName() { return dirHandle ? dirHandle.name : null; }
   function isConnected() { return !!dirHandle; }
+
+  // ---- 見積もり依頼の出力先フォルダ（例：01.DM の年度フォルダ）----
+  async function estTryRestore() {
+    if (!supported) return false;
+    const h = await idbGet(IDB_KEY_EST);
+    if (!h) return false;
+    if (await hasPermission(h)) { estDirHandle = h; return true; }
+    estPendingHandle = h; return false;
+  }
+  async function estConnectFolder() {
+    if (!supported) throw new Error("このブラウザはフォルダ直結に未対応です（Edge/Chromeをご利用ください）。");
+    if (estPendingHandle) {
+      if (await requestPermission(estPendingHandle)) { estDirHandle = estPendingHandle; estPendingHandle = null; await idbSet(IDB_KEY_EST, estDirHandle); return estDirHandle.name; }
+    }
+    const h = await window.showDirectoryPicker({ id: "dmplan-estimate", mode: "readwrite" });
+    if (!(await requestPermission(h))) throw new Error("フォルダへの書き込み許可が必要です。");
+    estDirHandle = h; estPendingHandle = null;
+    await idbSet(IDB_KEY_EST, h);
+    return h.name;
+  }
+  function estFolderName() { return estDirHandle ? estDirHandle.name : null; }
+  function estIsConnected() { return !!estDirHandle; }
+  // 指定名のサブフォルダを取得（無ければ作成）。複数階層は配列で渡す
+  async function estGetSubfolder(names) {
+    if (!estDirHandle) throw new Error("見積もり依頼の出力先フォルダが未接続です。");
+    let dir = estDirHandle;
+    for (const name of names) dir = await dir.getDirectoryHandle(name, { create: true });
+    return dir;
+  }
+  async function estWriteFile(dirH, filename, arrayBuffer) {
+    const fh = await dirH.getFileHandle(filename, { create: true });
+    const w = await fh.createWritable();
+    await w.write(arrayBuffer);
+    await w.close();
+  }
 
   // ---- 月データ ----
   async function listMonths() {
@@ -165,5 +203,6 @@ window.Storage = (function () {
     supported, tryRestore, connectFolder, folderName, isConnected,
     listMonths, readMonth, writeMonth, monthMtime,
     readLock, writeLock, clearLock,
+    estTryRestore, estConnectFolder, estFolderName, estIsConnected, estGetSubfolder, estWriteFile,
   };
 })();

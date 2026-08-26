@@ -64,12 +64,12 @@
     return { id: uid(), baseName: "", owner: "", category: "DMB", runStatus: "未確定", codeStatus: "未確定", num: "",
       kind: "RO", variant: "", media: "発送DM", listMethod: "AI", delivery: "100", lp: "×", p3: "", priority: "",
       estimatedCount: "", products: "", benefit: "", note: "", roFixDate: "", officialName: "",
-      supplement: "", origCode1: "", origCode2: "",
+      supplement: "", origCode1: "", origCode2: "", spec: "Z圧着", printerNote: "",
       compareBaseId: "", compareScope: "", testValidated: false, highlight: false, cond: emptyCond(), excl: emptyExcl() };
   }
   function emptyModel(month) {
     const active = []; for (let i = 0; i < DEFAULT_ROWS; i++) active.push(emptyMeasure());
-    return { month, title: window.monthLabel(month) + "DM施策", updatedAt: "", updatedBy: "",
+    return { month, title: window.monthLabel(month) + "DM施策", updatedAt: "", updatedBy: "", mailDate: "",
       active, carryNext: [], carryFuture: [], ideas: [] };
   }
   // 旧データ互換：欠けフィールドを補完
@@ -85,6 +85,8 @@
       if (x.officialName == null) x.officialName = "";
       if (x.testValidated == null) x.testValidated = false;
       if (x.highlight == null) x.highlight = false;
+      if (!x.spec) x.spec = "Z圧着";
+      if (x.printerNote == null) x.printerNote = "";
       // 旧データ互換：送付方法(選択式)→郵便割合(%)へ移行
       if (x.delivery === "郵便のみ" || x.delivery == null || x.delivery === "") x.delivery = "100";
       else if (x.delivery === "メール便のみ") x.delivery = "0";
@@ -92,6 +94,7 @@
       if (!x.lp) x.lp = "×";
     }));
     if (!m.ideas) m.ideas = [];
+    if (m.mailDate == null) m.mailDate = "";
     return m;
   }
 
@@ -477,7 +480,7 @@
     });
     // 展開トグル（裏側の施策概要/特典/RO版FIX）
     const hasNote = !!((m.note && m.note.trim()) || (m.benefit && m.benefit.trim()) || (m.roFixDate && m.roFixDate.trim()) || (m.products && m.products.trim())
-      || (m.supplement && m.supplement.trim()) || (m.origCode1 && m.origCode1.trim()) || (m.origCode2 && m.origCode2.trim()));
+      || (m.supplement && m.supplement.trim()) || (m.origCode1 && m.origCode1.trim()) || (m.origCode2 && m.origCode2.trim()) || (m.printerNote && m.printerNote.trim()));
     const exp = el("button", { class: "expander" + (hasNote ? " hasnote" : "") + (state.expanded[m.id] ? " open" : ""), title: hasNote ? "詳細・メモあり（クリックで開閉）" : "詳細・メモを開く" });
     exp.append(icon(state.expanded[m.id] ? "chevron-down" : "chevron-right"));
     if (hasNote) exp.append(el("i", { class: "ti ti-note note-dot", "aria-hidden": "true" }));
@@ -890,8 +893,23 @@
       w.append(pair);
       return w;
     };
-    // 並び：施策概要メモ → 元素材コード①② → 補足 → 掲載商品 → 特典 → FIX時期
-    grid.append(wNote, mkOrigCodes(), mk("補足", "supplement", "col-supp"), mk("掲載商品", "products", "col-prod"), mk("特典", "benefit", "col-benefit"), mk("FIX時期", "roFixDate", "col-fix", { placeholder: "yyyy/mm/dd", paste: true }));
+    // 仕様（見積もり依頼のE列に対応。印刷会社の仕様区分）
+    const wSpec = el("div", { class: "dw-field col-spec" });
+    wSpec.append(el("div", { class: "dw-lab" }, "仕様"));
+    const specSel = el("select", {});
+    ["Z圧着", "A6はがき"].forEach(v => { const op = el("option", { value: v }, v); if ((m.spec || "Z圧着") === v) op.selected = true; specSel.append(op); });
+    specSel.addEventListener("change", () => { m.spec = specSel.value; rerenderRow(key, m); });
+    wSpec.append(specSel);
+    // 補足_特別対応（見積もり依頼のH列に対応。印刷会社への申し送り事項）
+    const wPrinterNote = el("div", { class: "dw-field col-printernote" });
+    wPrinterNote.append(el("div", { class: "dw-lab" }, "補足_特別対応（印刷会社への申し送り）"));
+    const pnTa = el("textarea", { class: "d-note", rows: "1", placeholder: "" }); pnTa.value = m.printerNote || "";
+    const pnGrow = () => { pnTa.style.height = "auto"; pnTa.style.height = Math.max(30, pnTa.scrollHeight) + "px"; };
+    pnTa.addEventListener("input", () => { m.printerNote = pnTa.value; pnGrow(); });
+    pnTa.addEventListener("blur", () => rerenderRow(key, m));
+    wPrinterNote.append(pnTa); setTimeout(pnGrow, 0);
+    // 並び：施策概要メモ → 元素材コード①② → 補足 → 掲載商品 → 特典 → FIX時期 → 仕様 → 補足_特別対応
+    grid.append(wNote, mkOrigCodes(), mk("補足", "supplement", "col-supp"), mk("掲載商品", "products", "col-prod"), mk("特典", "benefit", "col-benefit"), mk("FIX時期", "roFixDate", "col-fix", { placeholder: "yyyy/mm/dd", paste: true }), wSpec, wPrinterNote);
     box.append(grid); cell.append(box); tr.append(cell); return tr;
   }
 
@@ -977,8 +995,9 @@
     root.append(renderMeasureSection("carryFuture", "今後へ持越し", "clock"));
     root.append(renderIdeas());
   }
-  function rerender() { renderSummary(); renderBody(); renderLockBar(); updateSavedAt(); updateTitle(); updateSelBar(); }
+  function rerender() { renderSummary(); renderBody(); renderLockBar(); updateSavedAt(); updateTitle(); updateSelBar(); updateMailDate(); }
   function updateTitle() { const e = $("#planTitle"); if (!e) return; e.textContent = state.model ? (state.model.title || "") : ""; }
+  function updateMailDate() { const e = $("#mailDate"); if (!e) return; e.value = state.model ? (state.model.mailDate || "") : ""; e.disabled = !state.model; }
 
   // ============ 行操作 ============
   function move(key, id, d) { if (!state.editing) return; const l = state.model[key]; const i = l.findIndex(x=>x.id===id), j=i+d; if(i<0||j<0||j>=l.length)return; [l[i],l[j]]=[l[j],l[i]]; markDirty(); rerender(); }
@@ -1144,8 +1163,8 @@
         const s = await S.readMonth(src);
         if (s) {
           model = normalize(JSON.parse(JSON.stringify(s)));
-          model.month = m; model.title = window.monthLabel(m) + " DM施策"; model.updatedAt = ""; model.updatedBy = "";
-          ["active","carryNext","carryFuture"].forEach(k => (model[k]||[]).forEach(it => { it.id = uid(); it.codeStatus = "未確定"; it.num = ""; it.officialName = ""; }));
+          model.month = m; model.title = window.monthLabel(m) + " DM施策"; model.updatedAt = ""; model.updatedBy = ""; model.mailDate = "";
+          ["active","carryNext","carryFuture"].forEach(k => (model[k]||[]).forEach(it => { it.id = uid(); it.codeStatus = "未確定"; it.num = ""; it.officialName = ""; it.printerNote = ""; }));
           (model.ideas||[]).forEach(it => it.id = uid());
         }
       }
@@ -1155,6 +1174,64 @@
     body.append(err, el("div", { class: "modal-actions" }, el("button", { class: "btn primary", onclick: create }, "作成")));
     openModal("新規月を作成", body);
     setTimeout(() => monthInp.focus(), 0);
+  }
+
+  // ============ 見積もり依頼（Excel出力） ============
+  function openEstimateModal() {
+    if (!state.model) { alert("対象月を選んでください。"); return; }
+    const mailDate = state.model.mailDate;
+    const rows = sortView(state.model.active.filter(passFilters)).filter(m => m.baseName && m.baseName.trim());
+    const body = el("div", {});
+    if (!mailDate) {
+      body.append(el("div", { class: "modal-err" }, "先にヘッダーの「投函日」を入力してください（編集モードにして入力します）。"));
+    } else {
+      body.append(labeled("投函日", el("div", {}, mailDate)));
+    }
+    body.append(labeled("出力対象", `${rows.length}件の施策（現在の表示順・絞り込みに従います）`));
+    if (rows.length > window.Estimate.MAX_ROWS) {
+      body.append(el("div", { class: "modal-err" }, `テンプレートは最大${window.Estimate.MAX_ROWS}件までです。絞り込みで件数を減らしてください。`));
+    }
+    const folderRow = el("div", { class: "modal-row" });
+    const refreshFolderRow = () => {
+      folderRow.innerHTML = "";
+      folderRow.append(el("span", {}, S.estIsConnected() ? ("接続中：" + S.estFolderName()) : "未接続"));
+      if (!S.estIsConnected()) {
+        folderRow.append(el("button", { class: "btn small", onclick: async () => {
+          try { await S.estConnectFolder(); refreshFolderRow(); } catch (e) { alert(e.message); }
+        } }, "📁 保存先フォルダに接続"));
+      }
+    };
+    refreshFolderRow();
+    body.append(labeled("見積もり依頼の保存先（「01.DM」フォルダを選択。年度・月のフォルダは自動作成されます）", folderRow));
+    const err = el("div", { class: "modal-err" });
+    const genBtn = el("button", { class: "btn primary", onclick: async () => {
+      if (!mailDate) { alert("投函日を入力してください。"); return; }
+      if (!rows.length) { alert("出力対象の施策がありません。"); return; }
+      if (rows.length > window.Estimate.MAX_ROWS) { alert(`最大${window.Estimate.MAX_ROWS}件までです。`); return; }
+      if (!S.estIsConnected()) { alert("保存先フォルダに接続してください。"); return; }
+      genBtn.disabled = true; err.textContent = "";
+      try {
+        const rowsData = rows.map(m => ({
+          name: derive(m, state.month).fullName,
+          count: parseInt(m.estimatedCount, 10) || "",
+          spec: m.spec || "Z圧着",
+          pctPostal: (parseFloat(m.delivery) || 0) / 100,
+          note: m.printerNote || "",
+        }));
+        const outBuf = await window.Estimate.build({ mailDate, rows: rowsData });
+        const [yearFolder, monthFolder] = window.Estimate.subfolderName(mailDate);
+        const dir = await S.estGetSubfolder([yearFolder, monthFolder]);
+        const fname = window.Estimate.filename(mailDate);
+        await S.estWriteFile(dir, fname, outBuf);
+        flash(`見積もり依頼を保存しました：${yearFolder}/${monthFolder}/${fname}`);
+        closeModal();
+      } catch (e) {
+        err.textContent = "出力に失敗しました：" + (e && e.message ? e.message : String(e));
+      }
+      genBtn.disabled = false;
+    } }, "Excelを作成して保存");
+    body.append(el("div", { class: "modal-actions" }, genBtn), err);
+    openModal("見積もり依頼を出力", body);
   }
 
   function startPolling() {
@@ -1185,6 +1262,12 @@
     });
     $("#monthSelect").addEventListener("change", e => e.target.value && loadMonth(e.target.value));
     $("#newMonthBtn").addEventListener("click", newMonth);
+    $("#estimateBtn").addEventListener("click", openEstimateModal);
+    $("#mailDate").addEventListener("change", e => {
+      if (!state.editing || !state.model) return;
+      state.model.mailDate = e.target.value; markDirty();
+    });
+    if (S.estTryRestore) S.estTryRestore();
     // Cover Flow（月めくり）
     $("#cfBtn").addEventListener("click", () => openCoverflow(false));
     $("#cfClose").addEventListener("click", closeCoverflow);
