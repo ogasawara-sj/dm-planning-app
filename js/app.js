@@ -858,7 +858,7 @@
       const w = el("div", { class: "dw-field col-origcode" });
       w.append(el("div", { class: "dw-lab" }, "元素材コード"));
       const pair = el("div", { class: "origcode-pair" });
-      [["origCode1", "①DMB190"], ["origCode2", "②DMB190"]].forEach(([f, ph]) => {
+      [["origCode1", "①"], ["origCode2", "②"]].forEach(([f, ph]) => {
         const i = el("input", { class: "origcode-in", value: m[f] || "", placeholder: ph });
         i.addEventListener("input", () => { m[f] = i.value; });
         i.addEventListener("blur", () => rerenderRow(key, m));
