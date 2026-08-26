@@ -233,7 +233,7 @@ tr.expanded-row .expander { background: var(--accent); color: #fff; }
 /* 施策名ごとの色分け：行はモノトーンのまま、No.横に色帯だけを付ける */
 tr.fam-row .c-no { box-shadow: inset 6px 0 0 var(--band); }
 /* 重要マーク（Excelの黄色ハイライト相当） */
-tr.highlighted td { background: #fffbe0; }
+table.grid tr.highlighted td { background: #fffbe0; }
 table.grid tr.highlighted:hover td { background: #fff6c4; }
 .hl-btn.on, .hl-btn.on:hover { background: #ffe066 !important; color: #7c4a03 !important; box-shadow: 0 0 0 3px rgba(255, 199, 0, .35); }
 /* 非色分け行を展開したときの内訳の既定色 */
