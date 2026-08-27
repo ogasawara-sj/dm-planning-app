@@ -508,8 +508,12 @@
     chk.checked = state.selected.has(m.id);
     const setChecked = (on) => { chk.checked = on; if (on) state.selected.add(m.id); else state.selected.delete(m.id); tr.classList.toggle("selected", on); updateSelBar(); };
     chk.addEventListener("change", () => setChecked(chk.checked));
-    // 上から下へドラッグすると、通った行のチェックを連続でON/OFFできる（Excelのドラッグ選択と同じ操作感）
-    chk.addEventListener("mousedown", (e) => { e.preventDefault(); state.dragCheckOn = !chk.checked; setChecked(state.dragCheckOn); document.body.classList.add("no-usersel"); });
+    // 上から下へドラッグすると、通った行のチェックを連続でON/OFFできる（Excelのドラッグ選択と同じ操作感）。
+    // mousedownで即トグルするため、その直後に発生するclickのネイティブトグルで元に戻ってしまう（単純クリックが効かない）
+    // のを防ぐ：マウス操作で処理済みの場合だけclickのデフォルト動作を止める（キーボード操作のSpaceは素通りさせる）
+    let mouseHandled = false;
+    chk.addEventListener("mousedown", (e) => { e.preventDefault(); mouseHandled = true; state.dragCheckOn = !chk.checked; setChecked(state.dragCheckOn); document.body.classList.add("no-usersel"); });
+    chk.addEventListener("click", (e) => { if (mouseHandled) { e.preventDefault(); mouseHandled = false; } });
     chk.addEventListener("mouseenter", () => { if (state.dragCheckOn != null) setChecked(state.dragCheckOn); });
     dragCell.append(chk);
     dragCell.append(handle, exp);
