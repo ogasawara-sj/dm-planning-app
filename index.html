@@ -7,11 +7,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" />
-  <link rel="stylesheet" href="css/styles.css?v=81" />
+  <link rel="stylesheet" href="css/styles.css?v=82" />
 </head>
 <body class="readonly">
   <header class="topbar">
-    <div class="brand"><div class="brand-title">DM企画サマリー</div></div>
+    <div class="brand"><div class="brand-title" id="brandTitle">DM企画サマリー</div></div>
     <div class="mfield"><span class="mlabel">対象月</span><select id="monthSelect"></select></div>
     <button id="cfBtn" class="btn ghost cf-btn" title="月をめくる（Cover Flow）">
       <svg class="cf-ico" width="36" height="20" viewBox="0 0 36 20" fill="none" aria-hidden="true">
@@ -47,17 +47,27 @@
     <div id="cfDropHint" class="cf-drophint">ドロップで、この施策を選択中の月へ移動します</div>
   </div>
 
+  <div id="kickoffCard" class="sg-kickoff"></div>
+
+  <div id="tabbar" class="sg-tabbar">
+    <button class="sg-tab on" data-tab="list"><i class="ti ti-list-details"></i> 施策一覧</button>
+    <button class="sg-tab" data-tab="design"><i class="ti ti-palette"></i> デザインスケジュール</button>
+    <button class="sg-tab" data-tab="tci"><i class="ti ti-list-numbers"></i> リストスケジュール</button>
+  </div>
+
   <div id="summary" class="summary"></div>
 
   <main id="board" class="board"></main>
 
+  <div id="schedBoard" class="sg-wrap" style="display:none"></div>
+
   <div id="toast" class="toast"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script src="js/masters.js?v=81"></script>
-  <script src="js/storage.js?v=81"></script>
-  <script src="js/estimate-template-b64.js?v=81"></script>
-  <script src="js/estimate.js?v=81"></script>
-  <script src="js/app.js?v=81"></script>
+  <script src="js/masters.js?v=82"></script>
+  <script src="js/storage.js?v=82"></script>
+  <script src="js/estimate-template-b64.js?v=82"></script>
+  <script src="js/estimate.js?v=82"></script>
+  <script src="js/app.js?v=82"></script>
 </body>
 </html>

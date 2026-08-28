@@ -14,6 +14,7 @@
     selected: new Set(), dragBatch: null, dragCanceled: false, dragFromSel: false, dragMoved: false,
     dropOverId: null, dropAfter: false, dragCheckOn: null,
     saveError: "", dirty: false,
+    tab: "list", schedOpen: {},
   };
   const cf = { data: [], cards: [], dots: [], sel: 0, dragMode: false, opening: false };
   let saving = false, autoTimer = null;   // 自動保存の状態
@@ -67,9 +68,11 @@
       supplement: "", origCode1: "", origCode2: "", spec: "Z圧着", printerNote: "",
       compareBaseId: "", compareScope: "", testValidated: false, highlight: false, cond: emptyCond(), excl: emptyExcl() };
   }
+  function emptySchedule() { return { gates: {}, listGate: ["", "", "", ""], kickoff: { due: "", items: ["", "", "", ""], open: true }, overrides: {}, done: {} }; }
   function emptyModel(month) {
     const active = []; for (let i = 0; i < DEFAULT_ROWS; i++) active.push(emptyMeasure());
     return { month, title: window.monthLabel(month) + "DM施策", updatedAt: "", updatedBy: "", mailDate: "",
+      designAxis: "", tciAxis: "", schedule: emptySchedule(),
       active, carryNext: [], carryFuture: [], ideas: [] };
   }
   // 旧データ互換：欠けフィールドを補完
@@ -95,6 +98,14 @@
     }));
     if (!m.ideas) m.ideas = [];
     if (m.mailDate == null) m.mailDate = "";
+    if (m.designAxis == null) m.designAxis = "";
+    if (m.tciAxis == null) m.tciAxis = "";
+    if (!m.schedule) m.schedule = emptySchedule();
+    if (!m.schedule.gates) m.schedule.gates = {};
+    if (!m.schedule.listGate) m.schedule.listGate = ["", "", "", ""];
+    if (!m.schedule.kickoff) m.schedule.kickoff = { due: "", items: ["", "", "", ""], open: true };
+    if (!m.schedule.overrides) m.schedule.overrides = {};
+    if (!m.schedule.done) m.schedule.done = {};
     // 旧データ互換：「今後へ持越し」セクションと自由記述の「アイデア候補」を廃止し、
     // 「次月持越し」＝アイデア欄に合流させる（1回だけ・以後は両方空のまま）
     if (!m.carryNext) m.carryNext = [];
@@ -1001,9 +1012,381 @@
     root.append(renderMeasureSection("active", "今月実施（施策）", "calendar-check"));
     root.append(renderMeasureSection("carryNext", "アイデア欄", "bulb"));
   }
-  function rerender() { renderSummary(); renderBody(); renderLockBar(); updateSavedAt(); updateTitle(); updateSelBar(); updateMailDate(); }
-  function updateTitle() { const e = $("#planTitle"); if (!e) return; e.textContent = state.model ? (state.model.title || "") : ""; }
+  function rerender() {
+    renderSummary(); renderLockBar(); updateSavedAt(); updateTitle(); updateSelBar(); updateMailDate(); renderKickoffCard();
+    if (state.tab === "list") renderBody(); else renderScheduleBoard();
+  }
+  function updateTitle() {
+    const e = $("#planTitle"); if (e) e.textContent = state.model ? (state.model.title || "") : "";
+    const b = $("#brandTitle"); if (b) b.textContent = (state.model && state.month) ? (parseInt(state.month.slice(4), 10) + "月") : "DM企画サマリー";
+  }
   function updateMailDate() { const e = $("#mailDate"); if (!e) return; e.value = state.model ? (state.model.mailDate || "") : ""; e.disabled = !state.model; }
+
+  // ============ スケジュール（デザイン／リスト） ============
+  // 施策名グループ単位のカレンダー型ガント。日付は投函日／データ入稿日／宛名入稿日から自動計算し、
+  // 手動でドラッグして直した項目だけを model.schedule.overrides に差分保存する（他は毎回再計算＝保存しない）。
+  const SCHED = {
+    design: {
+      steps: ["企画連携", "オリエン", "初校", "初校チェック", "2校", "2校チェック", "校了", "入稿"],
+      owners: ["CRM", "デザイン", "デザイン", "CRM", "デザイン", "CRM", "CRM", "デザイン"],
+      offsets: [27, 25, 14, 12, 7, 5, 1, 0],   // データ入稿日からの逆算日数（実データより算出。個別事情はドラッグで調整）
+      axisField: "designAxis", axisLabel: "データ入稿日",
+      gateItems: ["PMとの確認", "PMからの訴求優先度", "過去施策からの設計根拠", "表現の法務確認", "価格・CTAの他チャネル整合"],
+    },
+    tci: {
+      steps: ["依頼書格納", "GV共有", "スコアリング", "件数報告", "件数確定", "宛名入稿"],
+      owners: ["CRM", "TCI", "TCI", "TCI", "CRM", "TCI"],
+      offsetsAI: [53, 39, 36, 35, 32, 0],
+      offsetsKiro: [22, null, null, 11, 10, 0],   // 既ロはGV工程なし
+      axisField: "tciAxis", axisLabel: "宛名入稿日",
+      gateItems: ["DM企画決定（RO・テスト施策数、条件）", "DM掲載商品情報・リスト抽出日データ作成", "赤字/黒字の補正値情報の算出→GVへ共有", "使用件数決定"],
+    },
+  };
+  const LIST_GATE_GROUPS = ["お誕生日", "TRS下取り", "TRS下取り_メール便", "RAH買い替え", "RAH買い替え_メール便"];
+  const KICKOFF_ITEMS = ["施策数と優先順位の回答", "印刷会社への納品日の確認", "WOWセール購入PINの格納", "各施策の条件確認（依頼シート）"];
+  const CW = 26, LBL = 250;
+
+  function isoOf(d) { const p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; }
+  function parseISO(iso) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ""); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; }
+  function todayISO() { return isoOf(new Date()); }
+  function addDaysISO(iso, delta) { const d = parseISO(iso); if (!d) return ""; d.setDate(d.getDate() + delta); return isoOf(d); }
+  function diffDaysISO(a, b) { const da = parseISO(a), db = parseISO(b); if (!da || !db) return 0; return Math.round((db - da) / 86400000); }
+  function fmtMD(iso) { const d = parseISO(iso); return d ? `${d.getMonth() + 1}/${d.getDate()}` : ""; }
+
+  function schedStore() { return state.model.schedule; }
+  function stepKey(mId, view, i) { return mId + ":" + view + ":" + i; }
+  function autoStepDate(view, m, i) {
+    const cfg = SCHED[view];
+    const axis = state.model[cfg.axisField];
+    if (!axis) return "";
+    const offsets = view === "tci" ? (m.listMethod === "AI" ? cfg.offsetsAI : cfg.offsetsKiro) : cfg.offsets;
+    const off = offsets[i];
+    if (off == null) return "";
+    return addDaysISO(axis, -off);
+  }
+  function stepDate(view, m, i) { const ov = schedStore().overrides[stepKey(m.id, view, i)]; return ov || autoStepDate(view, m, i); }
+  function stepDone(view, m, i) { return !!schedStore().done[stepKey(m.id, view, i)]; }
+  function setStepDone(view, m, i, on) { schedStore().done[stepKey(m.id, view, i)] = on; }
+  function setStepOverride(view, m, i, iso) {
+    const auto = autoStepDate(view, m, i);
+    if (iso === auto) delete schedStore().overrides[stepKey(m.id, view, i)];
+    else schedStore().overrides[stepKey(m.id, view, i)] = iso;
+    setStepDone(view, m, i, false);   // 日付を動かしたら未完了に戻す
+  }
+  function groupGate(name) { const g = schedStore().gates; if (!g[name]) g[name] = ["", "", "", "", ""]; return g[name]; }
+  function listGateArr() { return schedStore().listGate; }
+  function kickoffObj() { return schedStore().kickoff; }
+  function gateArrDone(arr) { return arr.every(x => x === "ok" || x === "na"); }
+  function gateLockActive(view, groupName) {
+    if (view === "design") return !gateArrDone(groupGate(groupName));
+    if (view === "tci") return LIST_GATE_GROUPS.includes(groupName) && !gateArrDone(listGateArr());
+    return false;
+  }
+
+  // 施策名グループを state.model.active から動的に生成（並び順＝企画サマリーと同じ表示順）
+  function scheduleGroups() {
+    const map = {}, order = [];
+    state.model.active.forEach(m => {
+      const name = (m.baseName || "").trim(); if (!name) return;
+      if (!map[name]) { map[name] = { name, children: [] }; order.push(map[name]); }
+      map[name].children.push(m);
+    });
+    return order;
+  }
+  function stepVisualState(view, m, i, lockHere) {
+    const cfg = SCHED[view];
+    if (i === cfg.steps.length - 1) return "fix";   // 最終ステップ＝入稿/宛名入稿＝軸そのもの（操作不可）
+    if (lockHere && i === 0) return "lock";
+    if (stepDone(view, m, i)) return "done";
+    const d = stepDate(view, m, i); if (!d) return null;
+    if (diffDaysISO(d, todayISO()) > 0) return "late";
+    if (view === "design" && i < 2) return "brief";
+    return "plan";
+  }
+  function scheduleRange(view) {
+    const cfg = SCHED[view], dates = [];
+    scheduleGroups().forEach(g => g.children.forEach(m => cfg.steps.forEach((_, i) => { const d = stepDate(view, m, i); if (d) dates.push(d); })));
+    const axis = state.model[cfg.axisField]; if (axis) dates.push(axis);
+    dates.push(todayISO());
+    if (!dates.length) return null;
+    dates.sort();
+    return { from: addDaysISO(dates[0], -3), to: addDaysISO(dates[dates.length - 1], 3) };
+  }
+  function xOf(range, iso) { return diffDaysISO(range.from, iso) * CW + CW / 2; }
+
+  function scheduleHeaderEl(range, dayCount) {
+    const hd = el("div", { class: "sg-hd" });
+    hd.append(el("div", { class: "sg-lbl", style: `width:${LBL}px` },
+      el("div", { class: "sg-mrow" }, el("div", { class: "sg-mcell", style: `width:${LBL}px` }, "施策名")),
+      el("div", { class: "sg-drow" }, el("div", { class: "sg-dcell", style: `width:${LBL}px` }, "企画サマリーと同じ並び順")),
+      el("div", { class: "sg-wrow" }, el("div", { class: "sg-wcell", style: `width:${LBL}px` }, ""))));
+    const days = el("div", {});
+    const mrow = el("div", { class: "sg-mrow" }), drow = el("div", { class: "sg-drow" }), wrow = el("div", { class: "sg-wrow" });
+    const WD = ["日", "月", "火", "水", "木", "金", "土"];
+    let d = parseISO(range.from), curMonth = null, monthCell = null, monthCount = 0;
+    for (let i = 0; i < dayCount; i++) {
+      const mo = d.getMonth() + 1;
+      if (mo !== curMonth) { if (monthCell) monthCell.style.width = (monthCount * CW) + "px"; monthCell = el("div", { class: "sg-mcell" }, mo + "月"); mrow.append(monthCell); curMonth = mo; monthCount = 0; }
+      monthCount++;
+      const we = (d.getDay() === 0 || d.getDay() === 6);
+      drow.append(el("div", { class: "sg-dcell" + (we ? " we" : ""), style: `width:${CW}px` }, String(d.getDate())));
+      wrow.append(el("div", { class: "sg-wcell" + (we ? " we" : ""), style: `width:${CW}px` }, WD[d.getDay()]));
+      d.setDate(d.getDate() + 1);
+    }
+    if (monthCell) monthCell.style.width = (monthCount * CW) + "px";
+    days.append(mrow, drow, wrow);
+    hd.append(days);
+    return hd;
+  }
+  function trackCellsEl(range, dayCount) {
+    const track = el("div", { class: "sg-track", style: `width:${dayCount * CW}px` });
+    let d = parseISO(range.from);
+    for (let i = 0; i < dayCount; i++) {
+      track.append(el("div", { class: "sg-tcell" + ((d.getDay() === 0 || d.getDay() === 6) ? " we" : ""), style: `width:${CW}px` }));
+      d.setDate(d.getDate() + 1);
+    }
+    return track;
+  }
+  // ドラッグで日付を動かす／クリックで完了トグル／錠アイコンはゲートのポップアップを開く
+  function wireDot(dotEl, p, view, g, m, lock) {
+    if (p.st === "fix") return;
+    if (p.st === "lock") {
+      dotEl.addEventListener("click", e => { e.stopPropagation(); if (!state.editing) { flash("編集モードにしてから操作してください"); return; } openGatePopover(view, g, dotEl); });
+      return;
+    }
+    if (!state.editing) { dotEl.style.cursor = "default"; return; }
+    const targets = m ? [m] : g.children;
+    dotEl.addEventListener("mousedown", e => {
+      e.preventDefault();
+      const sx = e.clientX, baseLeft = parseFloat(dotEl.style.left); let days = 0, moved = false;
+      dotEl.classList.add("drag");
+      function mv(ev) { days = Math.round((ev.clientX - sx) / CW); if (days !== 0) moved = true; dotEl.style.left = (baseLeft + days * CW) + "px"; }
+      function up() {
+        document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up);
+        dotEl.classList.remove("drag");
+        if (moved) {
+          targets.forEach(mm => { const d = stepDate(view, mm, p.i); if (d) setStepOverride(view, mm, p.i, addDaysISO(d, days)); });
+        } else {
+          const allDone = targets.every(mm => !stepDate(view, mm, p.i) || stepDone(view, mm, p.i));
+          targets.forEach(mm => { if (stepDate(view, mm, p.i)) setStepDone(view, mm, p.i, !allDone); });
+        }
+        markDirty(); renderScheduleBoard();
+      }
+      document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up);
+    });
+  }
+  function ganttPoints(pts, range, view, g, m) {
+    const nodes = [];
+    if (!pts.length) return nodes;
+    const a = Math.min(...pts.map(p => xOf(range, p.mn))), b = Math.max(...pts.map(p => xOf(range, p.mx)));
+    nodes.push(el("div", { class: "sg-conn", style: `left:${a}px;width:${b - a}px` }));
+    const lock = false;   // 個々のドット状態(p.st)に既に反映済み
+    pts.forEach(p => {
+      const x = xOf(range, p.mn), x2 = xOf(range, p.mx);
+      if (!m && x2 > x) nodes.push(el("div", { class: "sg-span", style: `left:${x}px;width:${x2 - x}px` }));
+      const dotEl = el("div", { class: "sg-ms " + p.st, style: `left:${x - 9.5}px`, title: `${p.label}（${p.mn !== p.mx ? fmtMD(p.mn) + "〜" + fmtMD(p.mx) : fmtMD(p.mn)}）` });
+      if (p.st === "done") dotEl.append(icon("check"));
+      else if (p.st === "late") dotEl.append(icon("exclamation-mark"));
+      else if (p.st === "lock") dotEl.append(icon("lock"));
+      const labelEl = el("div", { class: "sg-mslab " + p.st, style: `left:${x}px` }, p.label, el("span", { class: "sg-dt" }, p.mn !== p.mx ? fmtMD(p.mn) + "〜" + fmtMD(p.mx) : fmtMD(p.mn)));
+      nodes.push(dotEl, labelEl);
+      wireDot(dotEl, p, view, g, m, lock);
+    });
+    return nodes;
+  }
+  function scheduleGroupRow(view, cfg, g, range, dayCount) {
+    const tr = el("div", { class: "sg-row" });
+    const fc = familyColorOf(g.children[0]) || "#9aa3b2";
+    const open = !!state.schedOpen[g.name];
+    const chev = el("button", { class: "sg-chev" }, icon(open ? "chevron-down" : "chevron-right"));
+    chev.addEventListener("click", () => { state.schedOpen[g.name] = !open; renderScheduleBoard(); });
+    const owners = [...new Set(g.children.flatMap(m => (m.owner || "").split("/").filter(Boolean)))].join("/");
+    const anyAI = g.children.some(m => m.listMethod === "AI"), anyKiro = g.children.some(m => m.listMethod !== "AI");
+    const tag = (anyAI && anyKiro) ? el("span", { class: "sg-tag mix" }, "AI+既ロ") : el("span", { class: "sg-tag " + (anyAI ? "ai" : "kiro") }, anyAI ? "AI" : "既ロ");
+    tr.append(el("div", { class: "sg-lbl", style: `width:${LBL}px` },
+      chev, el("span", { class: "sg-band", style: `background:${fc}` }),
+      el("span", { class: "sg-nmwrap" },
+        el("span", { class: "sg-nm" }, g.name, el("span", { class: "sg-cnt" }, g.children.length + "本")),
+        el("span", { class: "sg-sub" }, owners + " ", tag))));
+    const track = trackCellsEl(range, dayCount);
+    const lock = gateLockActive(view, g.name);
+    const pts = [];
+    cfg.steps.forEach((label, i) => {
+      const ds = g.children.map(m => stepDate(view, m, i)).filter(Boolean); if (!ds.length) return;
+      ds.sort();
+      const states = g.children.map(m => stepVisualState(view, m, i, lock)).filter(Boolean);
+      let st;
+      if (states.includes("late")) st = "late";
+      else if (states.every(s => s === "done" || s === "fix")) st = states[0] === "fix" ? "fix" : "done";
+      else if (states.includes("lock")) st = "lock";
+      else st = states.includes("brief") ? "brief" : "plan";
+      pts.push({ i, label, mn: ds[0], mx: ds[ds.length - 1], st });
+    });
+    track.append(...ganttPoints(pts, range, view, g, null));
+    tr.append(track);
+    return tr;
+  }
+  function scheduleChildRow(view, cfg, g, m, range, dayCount) {
+    const tr = el("div", { class: "sg-row sg-child" });
+    const label = kindLabel(m);
+    tr.append(el("div", { class: "sg-lbl", style: `width:${LBL}px` },
+      el("span", { class: "sg-nmwrap" },
+        el("span", { class: "sg-nm" }, g.name + " " + label),
+        el("span", { class: "sg-sub" }, (m.owner || "") + " ", el("span", { class: "sg-tag " + (m.listMethod === "AI" ? "ai" : "kiro") }, m.listMethod === "AI" ? "AI" : "既ロ")))));
+    const track = trackCellsEl(range, dayCount);
+    const lock = gateLockActive(view, g.name);
+    const pts = [];
+    cfg.steps.forEach((label2, i) => {
+      const d = stepDate(view, m, i); if (!d) return;
+      pts.push({ i, label: label2, mn: d, mx: d, st: stepVisualState(view, m, i, lock) });
+    });
+    track.append(...ganttPoints(pts, range, view, g, m));
+    tr.append(track);
+    return tr;
+  }
+  function addOverlayLines(cal, cfg, range) {
+    const axis = state.model[cfg.axisField];
+    if (axis && diffDaysISO(range.from, axis) >= 0) {
+      const x = LBL + xOf(range, axis);
+      cal.append(el("div", { class: "sg-axisline", style: `left:${x}px` }));
+      cal.append(el("div", { class: "sg-axistag", style: `left:${x}px` }, cfg.axisLabel + " " + fmtMD(axis)));
+    }
+    const t = todayISO(), tx = LBL + xOf(range, t);
+    cal.append(el("div", { class: "sg-todayline", style: `left:${tx - 1.5}px` }));
+    cal.append(el("div", { class: "sg-todaytag", style: `left:${tx}px` }, "今日"));
+  }
+  function openGatePopover(view, g, anchor) {
+    closeColMenu();
+    const cfg = SCHED[view];
+    const isShared = view === "tci";
+    const arr = isShared ? listGateArr() : groupGate(g.name);
+    const title = isShared ? "リスト抽出 準備チェック（5施策共通）" : (g.name + " 企画連携チェック");
+    const pop = el("div", { class: "sg-gatepop", id: "colMenu" });
+    pop.addEventListener("click", e => e.stopPropagation());
+    pop.append(el("div", { class: "sg-gatepop-h" }, title));
+    cfg.gateItems.forEach((item, idx) => {
+      const rowEl = el("div", { class: "sg-gatepop-row" }, el("span", { class: "sg-gatepop-t" }, item));
+      const mk = (val, label) => {
+        const on = arr[idx] === val;
+        const b = el("button", { class: "sg-gatepop-b" + (on ? " on" : "") }, label);
+        b.addEventListener("click", () => {
+          arr[idx] = (arr[idx] === val) ? "" : val;
+          if (isShared && idx === 0) kickoffObj().items[0] = arr[0];
+          markDirty(); closeColMenu(); renderScheduleBoard(); renderKickoffCard();
+        });
+        return b;
+      };
+      rowEl.append(mk("ok", "OK"), mk("na", "不要"));
+      pop.append(rowEl);
+    });
+    const r = anchor.getBoundingClientRect();
+    pop.style.left = Math.min(r.left, window.innerWidth - 260) + "px"; pop.style.top = (r.bottom + 6) + "px";
+    document.body.append(pop);
+    setTimeout(() => document.addEventListener("click", closeColMenu), 0);
+  }
+  function renderScheduleBoard() {
+    const root = $("#schedBoard"); if (!root) return; root.innerHTML = "";
+    if (!state.model) { root.append(el("div", { class: "placeholder" }, "「対象月」で月を選んでください。")); return; }
+    computeFamilyColors();
+    const view = state.tab; const cfg = SCHED[view];
+    const groups = scheduleGroups();
+
+    const controls = el("div", { class: "sg-controls" });
+    const axisInp = el("input", { type: "date", value: state.model[cfg.axisField] || "" });
+    axisInp.addEventListener("change", () => { if (!state.editing) { axisInp.value = state.model[cfg.axisField] || ""; flash("編集モードにしてから入力してください"); return; } state.model[cfg.axisField] = axisInp.value; markDirty(); renderScheduleBoard(); });
+    controls.append(el("label", { class: "sg-field" }, cfg.axisLabel, axisInp));
+    const anyOpen = groups.some(g => state.schedOpen[g.name]);
+    const expBtn = el("button", { class: "btn small ghost" }, anyOpen ? "▲ すべて閉じる" : "▼ すべて開く");
+    expBtn.addEventListener("click", () => { const open = !anyOpen; groups.forEach(g => state.schedOpen[g.name] = open); renderScheduleBoard(); });
+    controls.append(expBtn);
+    root.append(controls);
+
+    if (!groups.length) { root.append(el("div", { class: "placeholder" }, "「施策一覧」タブで施策名を入力すると、ここにスケジュールが表示されます。")); return; }
+    if (!state.model[cfg.axisField]) { root.append(el("div", { class: "placeholder" }, cfg.axisLabel + "を入力すると、ここに逆算スケジュールが表示されます。")); return; }
+    const range = scheduleRange(view);
+
+    const sec = el("section", { class: "sg-sec" });
+    const dotSpan = c => el("span", {}, el("span", { class: "sg-dot", style: `background:${c}` }));
+    const legend = el("div", { class: "sg-legend" });
+    legend.append(
+      el("span", {}, el("span", { class: "sg-dot", style: "background:#9aa3b2" }), view === "design" ? "企画連携チェック未完了" : "リスト抽出準備 未完了"));
+    if (view === "design") legend.append(el("span", {}, el("span", { class: "sg-dot", style: "background:#0f9c74" }), "オリエン"));
+    legend.append(
+      el("span", {}, el("span", { class: "sg-dot", style: "background:#3fae62" }), "完了"),
+      el("span", {}, el("span", { class: "sg-dot", style: "background:#e5484d" }), "遅延"),
+      el("span", {}, el("span", { class: "sg-dot", style: "background:#a78bfa" }), "予定"),
+      el("span", {}, el("span", { class: "sg-vl", style: "background:#2563eb" }), cfg.axisLabel + "（全施策共通）"),
+      el("span", {}, el("span", { class: "sg-vl", style: "background:#e0761a" }), "今日"));
+    sec.append(legend);
+
+    const dayCount = diffDaysISO(range.from, range.to) + 1;
+    const cal = el("div", { class: "sg-cal" });
+    cal.append(scheduleHeaderEl(range, dayCount));
+    const body = el("div", { class: "sg-body" });
+    groups.forEach(g => {
+      body.append(scheduleGroupRow(view, cfg, g, range, dayCount));
+      if (state.schedOpen[g.name]) g.children.forEach(m => body.append(scheduleChildRow(view, cfg, g, m, range, dayCount)));
+    });
+    cal.append(body);
+    addOverlayLines(cal, cfg, range);
+    sec.append(el("div", { class: "sg-scroll" }, cal));
+    sec.append(el("div", { class: "sg-hint" }, view === "design"
+      ? "いちばん左が「企画連携」。グレーの錠マークをクリックすると5項目のチェックが出ます。OKまたは不要がすべて選ばれると錠が外れて連携完了にできます。入稿日はタナカの締切なので全施策共通（青の縦線）。"
+      : "GV連携のある5施策（お誕生日・TRS下取り・TRS下取り_メール便・RAH買い替え・RAH買い替え_メール便）は「依頼書格納」がリスト抽出準備チェックの錠付きです。5施策共通の1つのチェックなので、どの行で押しても連動します。"));
+    root.append(sec);
+  }
+  function renderKickoffCard() {
+    const box = $("#kickoffCard"); if (!box) return; box.innerHTML = "";
+    if (!state.model) return;
+    const k = kickoffObj();
+    const done = gateArrDone(k.items);
+    let badge;
+    if (done) badge = el("span", { class: "sg-kickoff-badge done" }, "回答済");
+    else if (!k.due) badge = el("span", { class: "sg-kickoff-badge wait" }, "期限未設定");
+    else {
+      const d = diffDaysISO(k.due, todayISO());
+      badge = d > 0 ? el("span", { class: "sg-kickoff-badge over" }, "期限超過")
+        : el("span", { class: "sg-kickoff-badge " + (-d <= 2 ? "soon" : "wait") }, `あと${-d}日`);
+    }
+    const chev = el("button", { class: "sg-chev" }, icon(k.open ? "chevron-down" : "chevron-right"));
+    chev.addEventListener("click", () => { k.open = !k.open; renderKickoffCard(); });
+    const head = el("div", { class: "sg-kickoff-h" }, chev, icon("mail"), el("span", { class: "sg-kickoff-t" }, "栗田さん（TCI）からの月次キックオフ依頼"));
+    if (k.open) {
+      const dueInp = el("input", { type: "date", value: k.due || "" });
+      dueInp.addEventListener("change", () => { if (!state.editing) { dueInp.value = k.due || ""; flash("編集モードにしてから入力してください"); return; } k.due = dueInp.value; markDirty(); renderKickoffCard(); });
+      head.append(el("span", { class: "sg-kickoff-who" }, "回答期限 ", dueInp));
+    }
+    head.append(el("span", { class: "sg-spacer" }), badge);
+    box.append(head);
+    if (k.open) {
+      const list = el("div", { class: "sg-kickoff-list" });
+      KICKOFF_ITEMS.forEach((item, idx) => {
+        const rowEl = el("div", { class: "sg-kickoff-row" }, el("span", { class: "sg-kickoff-t2" }, (idx + 1) + ". " + item));
+        const mk = (val, label) => {
+          const on = k.items[idx] === val;
+          const b = el("button", { class: "sg-kickoff-b" + (on ? " on" : "") }, label);
+          b.addEventListener("click", () => {
+            if (!state.editing) { flash("編集モードにしてから操作してください"); return; }
+            k.items[idx] = (k.items[idx] === val) ? "" : val;
+            if (idx === 0) listGateArr()[0] = k.items[0];
+            markDirty(); renderKickoffCard(); if (state.tab === "tci") renderScheduleBoard();
+          });
+          return b;
+        };
+        rowEl.append(mk("ok", "OK"), mk("na", "不要"));
+        list.append(rowEl);
+      });
+      box.append(list, el("div", { class: "sg-kickoff-foot" }, "企画サマリーにまだ施策が入っていない月でも、ここから始まります。①の回答は「リスト抽出準備」チェックの「DM企画決定」と同じ事実です。"));
+    }
+  }
+  function switchTab(tab) {
+    state.tab = tab;
+    document.querySelectorAll(".sg-tab").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+    $("#summary").style.display = tab === "list" ? "" : "none";
+    $("#board").style.display = tab === "list" ? "" : "none";
+    $("#schedBoard").style.display = tab === "list" ? "none" : "";
+    if (tab === "list") renderBody(); else renderScheduleBoard();
+  }
 
   // ============ 行操作 ============
   function move(key, id, d) { if (!state.editing) return; const l = state.model[key]; const i = l.findIndex(x=>x.id===id), j=i+d; if(i<0||j<0||j>=l.length)return; [l[i],l[j]]=[l[j],l[i]]; markDirty(); rerender(); }
@@ -1170,6 +1553,7 @@
         if (s) {
           model = normalize(JSON.parse(JSON.stringify(s)));
           model.month = m; model.title = window.monthLabel(m) + " DM施策"; model.updatedAt = ""; model.updatedBy = ""; model.mailDate = "";
+          model.designAxis = ""; model.tciAxis = ""; model.schedule = emptySchedule();
           ["active","carryNext","carryFuture"].forEach(k => (model[k]||[]).forEach(it => { it.id = uid(); it.codeStatus = "未確定"; it.num = ""; it.officialName = ""; it.printerNote = ""; }));
           (model.ideas||[]).forEach(it => it.id = uid());
         }
@@ -1326,6 +1710,7 @@
     })();
     $("#editBtn").addEventListener("click", enterEdit);
     $("#viewBtn").addEventListener("click", exitEdit);
+    document.querySelectorAll(".sg-tab").forEach(b => b.addEventListener("click", () => switchTab(b.dataset.tab)));
     $("#board").addEventListener("input", onInput);
     // 自動保存：フィールド編集を検知して保存予約
     $("#board").addEventListener("input", markDirty);
