@@ -1044,7 +1044,6 @@
       gateItems: ["DM企画決定（RO・テスト施策数、条件）", "DM掲載商品情報・リスト抽出日データ作成", "赤字/黒字の補正値情報の算出→GVへ共有", "使用件数決定"],
     },
   };
-  const LIST_GATE_GROUPS = ["お誕生日", "TRS下取り", "TRS下取り_メール便", "RAH買い替え", "RAH買い替え_メール便"];
   const KICKOFF_ITEMS = ["施策数と優先順位の回答", "印刷会社への納品日の確認", "WOWセール購入PINの格納", "各施策の条件確認（依頼シート）"];
   const CW = 26, LBL = 250;
 
@@ -1096,8 +1095,7 @@
   function gateArrDone(arr) { return arr.every(x => x === "ok" || x === "na"); }
   function gateLockActive(view, groupName) {
     if (view === "design") return !gateArrDone(groupGate(groupName));
-    if (view === "tci") return LIST_GATE_GROUPS.includes(groupName) && !gateArrDone(listGateArr());
-    return false;
+    return false;   // リストスケジュール側は「依頼書格納」の鍵をやめ、他の工程と同じく自由に動かせるようにした
   }
 
   // 施策名グループを state.model.active から動的に生成（並び順＝企画サマリーと同じ表示順）
@@ -1344,15 +1342,14 @@
     cal.append(el("div", { class: "sg-todayline", style: `left:${tx - 1.5}px` }));
     cal.append(el("div", { class: "sg-todaytag", style: `left:${tx}px` }, "今日"));
   }
+  // 企画連携ゲート（デザインスケジュール側のみ。リストスケジュール側の「依頼書格納」の鍵は廃止した）
   function openGatePopover(view, g, anchor) {
     closeColMenu();
     const cfg = SCHED[view];
-    const isShared = view === "tci";
-    const arr = isShared ? listGateArr() : groupGate(g.name);
-    const title = isShared ? "リスト抽出 準備チェック（5施策共通）" : (g.name + " 企画連携チェック");
+    const arr = groupGate(g.name);
     const pop = el("div", { class: "sg-gatepop", id: "colMenu" });
     pop.addEventListener("click", e => e.stopPropagation());
-    pop.append(el("div", { class: "sg-gatepop-h" }, title));
+    pop.append(el("div", { class: "sg-gatepop-h" }, g.name + " 企画連携チェック"));
     cfg.gateItems.forEach((item, idx) => {
       const rowEl = el("div", { class: "sg-gatepop-row" }, el("span", { class: "sg-gatepop-t" }, item));
       const mk = (val, label) => {
@@ -1360,8 +1357,7 @@
         const b = el("button", { class: "sg-gatepop-b" + (on ? " on" : "") }, label);
         b.addEventListener("click", () => {
           arr[idx] = (arr[idx] === val) ? "" : val;
-          if (isShared && idx === 0) kickoffObj().items[0] = arr[0];
-          markDirty(); closeColMenu(); renderScheduleBoard(); renderKickoffCard();
+          markDirty(); closeColMenu(); renderScheduleBoard();
         });
         return b;
       };
@@ -1395,11 +1391,11 @@
     const range = scheduleRange(view);
 
     const sec = el("section", { class: "sg-sec" });
-    const dotSpan = c => el("span", {}, el("span", { class: "sg-dot", style: `background:${c}` }));
     const legend = el("div", { class: "sg-legend" });
-    legend.append(
-      el("span", {}, el("span", { class: "sg-dot", style: "background:#9aa3b2" }), view === "design" ? "企画連携チェック未完了" : "リスト抽出準備 未完了"));
-    if (view === "design") legend.append(el("span", {}, el("span", { class: "sg-dot", style: "background:#0f9c74" }), "オリエン"));
+    if (view === "design") {
+      legend.append(el("span", {}, el("span", { class: "sg-dot", style: "background:#9aa3b2" }), "企画連携チェック未完了"));
+      legend.append(el("span", {}, el("span", { class: "sg-dot", style: "background:#0f9c74" }), "オリエン"));
+    }
     legend.append(
       el("span", {}, el("span", { class: "sg-dot", style: "background:#3fae62" }), "完了"),
       el("span", {}, el("span", { class: "sg-dot", style: "background:#e5484d" }), "遅延"),
@@ -1421,7 +1417,7 @@
     sec.append(el("div", { class: "sg-scroll" }, cal));
     sec.append(el("div", { class: "sg-hint" }, view === "design"
       ? "いちばん左が「企画連携」。グレーの錠マークをクリックすると5項目のチェックが出ます。OKまたは不要がすべて選ばれると錠が外れて連携完了にできます。入稿日はタナカの締切なので全施策共通（青の縦線）。"
-      : "GV連携のある5施策（お誕生日・TRS下取り・TRS下取り_メール便・RAH買い替え・RAH買い替え_メール便）は「依頼書格納」がリスト抽出準備チェックの錠付きです。5施策共通の1つのチェックなので、どの行で押しても連動します。"));
+      : "AI施策はGV社への提供があるぶん早め、既存ロジックはGV工程なし（GV共有・スコアリングを省略）で遅めに自動設定されます。宛名入稿はTCIの締切なので全施策共通（青の縦線）。丸は右クリックでメモの追加や工程の追加ができます。"));
     root.append(sec);
   }
   function renderKickoffCard() {
