@@ -68,7 +68,7 @@
       supplement: "", origCode1: "", origCode2: "", spec: "Z圧着", printerNote: "",
       compareBaseId: "", compareScope: "", testValidated: false, highlight: false, cond: emptyCond(), excl: emptyExcl() };
   }
-  function emptySchedule() { return { gates: {}, listGate: ["", "", "", ""], kickoff: { due: "", items: ["", "", "", ""], open: true }, overrides: {}, done: {} }; }
+  function emptySchedule() { return { gates: {}, listGate: ["", "", "", ""], kickoff: { due: "", items: ["", "", "", ""], open: true }, overrides: {}, done: {}, notes: {}, custom: [] }; }
   function emptyModel(month) {
     const active = []; for (let i = 0; i < DEFAULT_ROWS; i++) active.push(emptyMeasure());
     return { month, title: window.monthLabel(month) + "DM施策", updatedAt: "", updatedBy: "", mailDate: "",
@@ -106,6 +106,8 @@
     if (!m.schedule.kickoff) m.schedule.kickoff = { due: "", items: ["", "", "", ""], open: true };
     if (!m.schedule.overrides) m.schedule.overrides = {};
     if (!m.schedule.done) m.schedule.done = {};
+    if (!m.schedule.notes) m.schedule.notes = {};
+    if (!m.schedule.custom) m.schedule.custom = [];
     // 旧データ互換：「今後へ持越し」セクションと自由記述の「アイデア候補」を廃止し、
     // 「次月持越し」＝アイデア欄に合流させる（1回だけ・以後は両方空のまま）
     if (!m.carryNext) m.carryNext = [];
@@ -191,9 +193,9 @@
       setMode(true); if (edit) edit.disabled = false; if (view) view.disabled = false;
     } else {
       setMode(false); if (view) view.disabled = false;
-      const otherLocked = lock && !mine;
-      if (edit) edit.disabled = !state.model || otherLocked;
-      if (otherLocked && note) { note.className = "lock-note locked"; note.append(icon("lock"), ` ${lock.user} さんが使用しています（閲覧のみ）`); }
+      // 同時に何人が共有フォルダへ接続していても編集できるようにする（ロックはブロックせず、情報表示のみ）
+      if (edit) edit.disabled = !state.model;
+      if (lock && !mine && note) { note.className = "lock-note"; note.append(icon("users"), ` ${lock.user} さんも編集中の可能性があります（同時編集にご注意ください）`); }
     }
     document.body.classList.toggle("readonly", !state.editing);
   }
@@ -1076,6 +1078,21 @@
   function groupGate(name) { const g = schedStore().gates; if (!g[name]) g[name] = ["", "", "", "", ""]; return g[name]; }
   function listGateArr() { return schedStore().listGate; }
   function kickoffObj() { return schedStore().kickoff; }
+  // メモ：既定の工程は m/g のキー、追加した工程（カスタム）は "custom:<id>" をキーにする
+  function noteKeyFor(view, g, m, i) { return m ? stepKey(m.id, view, i) : `g:${g.name}:${view}:${i}`; }
+  function getNote(key) { return schedStore().notes[key] || ""; }
+  function setNote(key, text) { const t = (text || "").trim(); if (t) schedStore().notes[key] = t; else delete schedStore().notes[key]; }
+  // カスタム工程（自分で追加した丸）：行（施策名グループ or 個別施策）ごとに何個でも追加できる
+  function rowKeyFor(g, m) { return m ? "m:" + m.id : "g:" + g.name; }
+  function customForRow(view, rowKey) { return schedStore().custom.filter(c => c.view === view && c.rowKey === rowKey); }
+  function addCustom(view, rowKey, label, date) {
+    const c = { id: uid(), view, rowKey, label: label || "予定", date, done: false };
+    schedStore().custom.push(c); return c;
+  }
+  function removeCustom(id) {
+    setNote("custom:" + id, "");
+    const arr = schedStore().custom; const i = arr.findIndex(c => c.id === id); if (i >= 0) arr.splice(i, 1);
+  }
   function gateArrDone(arr) { return arr.every(x => x === "ok" || x === "na"); }
   function gateLockActive(view, groupName) {
     if (view === "design") return !gateArrDone(groupGate(groupName));
@@ -1101,6 +1118,11 @@
     const d = stepDate(view, m, i); if (!d) return null;
     if (diffDaysISO(d, todayISO()) > 0) return "late";
     if (view === "design" && i < 2) return "brief";
+    return "plan";
+  }
+  function customVisualState(c) {
+    if (c.done) return "done";
+    if (diffDaysISO(c.date, todayISO()) > 0) return "late";
     return "plan";
   }
   function scheduleRange(view) {
@@ -1138,25 +1160,80 @@
     hd.append(days);
     return hd;
   }
-  function trackCellsEl(range, dayCount) {
+  // rowKey＝右クリックで追加するカスタム工程の行キー。指定すると空欄を右クリックしたときに追加メニューを出す
+  function trackCellsEl(range, dayCount, view, rowKey) {
     const track = el("div", { class: "sg-track", style: `width:${dayCount * CW}px` });
     let d = parseISO(range.from);
     for (let i = 0; i < dayCount; i++) {
       track.append(el("div", { class: "sg-tcell" + ((d.getDay() === 0 || d.getDay() === 6) ? " we" : ""), style: `width:${CW}px` }));
       d.setDate(d.getDate() + 1);
     }
+    if (view && rowKey) {
+      track.addEventListener("contextmenu", e => {
+        e.preventDefault();
+        if (!state.editing) { flash("編集モードにしてから操作してください"); return; }
+        const rect = track.getBoundingClientRect();
+        const dayIdx = Math.max(0, Math.min(dayCount - 1, Math.floor((e.clientX - rect.left) / CW)));
+        const date = addDaysISO(range.from, dayIdx);
+        openCtxMenu([{ label: `＋ ${fmtMD(date)} に工程を追加`, onClick: () => openAddCustomModal(view, rowKey, date) }], e.clientX, e.clientY);
+      });
+    }
     return track;
   }
-  // ドラッグで日付を動かす／クリックで完了トグル／錠アイコンはゲートのポップアップを開く
-  function wireDot(dotEl, p, view, g, m, lock) {
+  function openCtxMenu(items, x, y) {
+    closeColMenu();
+    const menu = el("div", { id: "colMenu", class: "col-menu" });
+    menu.addEventListener("click", e => e.stopPropagation());
+    items.forEach(it => menu.append(el("button", { class: "cm-item", onclick: () => { closeColMenu(); it.onClick(); } }, it.label)));
+    document.body.append(menu);
+    menu.style.left = Math.min(x, window.innerWidth - menu.offsetWidth - 8) + "px";
+    menu.style.top = Math.min(y, window.innerHeight - menu.offsetHeight - 8) + "px";
+    setTimeout(() => document.addEventListener("click", closeColMenu), 0);
+  }
+  function openMemoModal(key, label) {
+    const box = el("div", {});
+    const ta = el("textarea", { rows: "4" });
+    ta.value = getNote(key);
+    box.append(labeled(`メモ（${label}）`, ta));
+    const save = () => { setNote(key, ta.value); markDirty(); closeModal(); renderScheduleBoard(); };
+    box.append(el("div", { class: "modal-actions" }, el("button", { class: "btn primary", onclick: save }, "保存")));
+    openModal("メモ", box);
+    setTimeout(() => ta.focus(), 0);
+  }
+  function openAddCustomModal(view, rowKey, date) {
+    const box = el("div", {});
+    const labelInp = el("input", { class: "modal-in", placeholder: "例：社内確認" });
+    box.append(labeled("ラベル", labelInp));
+    const dateInp = el("input", { class: "modal-in", type: "date", value: date });
+    box.append(labeled("日付", dateInp));
+    const memoTa = el("textarea", { rows: "3" });
+    box.append(labeled("メモ（任意）", memoTa));
+    const err = el("div", { class: "modal-err" });
+    const create = () => {
+      if (!dateInp.value) { err.textContent = "日付を入力してください。"; return; }
+      const c = addCustom(view, rowKey, labelInp.value.trim(), dateInp.value);
+      if (memoTa.value.trim()) setNote("custom:" + c.id, memoTa.value.trim());
+      markDirty(); closeModal(); renderScheduleBoard();
+    };
+    box.append(err, el("div", { class: "modal-actions" }, el("button", { class: "btn primary", onclick: create }, "追加")));
+    openModal("工程を追加", box);
+    setTimeout(() => labelInp.focus(), 0);
+  }
+  // ドラッグで日付を動かす／クリックで完了トグル／錠アイコンはゲートのポップアップを開く／右クリックでメモ・削除
+  function wireDot(dotEl, p, view, g, m) {
+    const key = p.custom ? ("custom:" + p.custom.id) : noteKeyFor(view, g, m, p.i);
+    dotEl.addEventListener("contextmenu", e => {
+      e.preventDefault(); e.stopPropagation();
+      if (!state.editing) { flash("編集モードにしてから操作してください"); return; }
+      const items = [{ label: getNote(key) ? "📝 メモを編集" : "📝 メモを追加", onClick: () => openMemoModal(key, p.label) }];
+      if (p.custom) items.push({ label: "🗑 このマークを削除", onClick: () => { removeCustom(p.custom.id); markDirty(); renderScheduleBoard(); } });
+      openCtxMenu(items, e.clientX, e.clientY);
+    });
     if (p.st === "fix") return;
-    if (p.st === "lock") {
-      dotEl.addEventListener("click", e => { e.stopPropagation(); if (!state.editing) { flash("編集モードにしてから操作してください"); return; } openGatePopover(view, g, dotEl); });
-      return;
-    }
     if (!state.editing) { dotEl.style.cursor = "default"; return; }
-    const targets = m ? [m] : g.children;
+    const targets = p.custom ? null : (m ? [m] : g.children);
     dotEl.addEventListener("mousedown", e => {
+      if (e.button !== 0) return;
       e.preventDefault();
       const sx = e.clientX, baseLeft = parseFloat(dotEl.style.left); let days = 0, moved = false;
       dotEl.classList.add("drag");
@@ -1164,8 +1241,13 @@
       function up() {
         document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up);
         dotEl.classList.remove("drag");
-        if (moved) {
+        if (p.custom) {
+          if (moved) p.custom.date = addDaysISO(p.custom.date, days);
+          else p.custom.done = !p.custom.done;
+        } else if (moved) {
           targets.forEach(mm => { const d = stepDate(view, mm, p.i); if (d) setStepOverride(view, mm, p.i, addDaysISO(d, days)); });
+        } else if (p.st === "lock") {
+          openGatePopover(view, g, dotEl); return;
         } else {
           const allDone = targets.every(mm => !stepDate(view, mm, p.i) || stepDone(view, mm, p.i));
           targets.forEach(mm => { if (stepDate(view, mm, p.i)) setStepDone(view, mm, p.i, !allDone); });
@@ -1180,17 +1262,20 @@
     if (!pts.length) return nodes;
     const a = Math.min(...pts.map(p => xOf(range, p.mn))), b = Math.max(...pts.map(p => xOf(range, p.mx)));
     nodes.push(el("div", { class: "sg-conn", style: `left:${a}px;width:${b - a}px` }));
-    const lock = false;   // 個々のドット状態(p.st)に既に反映済み
     pts.forEach(p => {
       const x = xOf(range, p.mn), x2 = xOf(range, p.mx);
       if (!m && x2 > x) nodes.push(el("div", { class: "sg-span", style: `left:${x}px;width:${x2 - x}px` }));
-      const dotEl = el("div", { class: "sg-ms " + p.st, style: `left:${x - 9.5}px`, title: `${p.label}（${p.mn !== p.mx ? fmtMD(p.mn) + "〜" + fmtMD(p.mx) : fmtMD(p.mn)}）` });
+      const key = p.custom ? ("custom:" + p.custom.id) : noteKeyFor(view, g, m, p.i);
+      const note = getNote(key);
+      const dotEl = el("div", { class: "sg-ms " + p.st + (p.custom ? " custom" : ""), style: `left:${x - 9.5}px`,
+        title: `${p.label}（${p.mn !== p.mx ? fmtMD(p.mn) + "〜" + fmtMD(p.mx) : fmtMD(p.mn)}）` + (note ? "\nメモ：" + note : "") });
       if (p.st === "done") dotEl.append(icon("check"));
       else if (p.st === "late") dotEl.append(icon("exclamation-mark"));
       else if (p.st === "lock") dotEl.append(icon("lock"));
+      if (note) dotEl.append(el("span", { class: "sg-notemk" }));
       const labelEl = el("div", { class: "sg-mslab " + p.st, style: `left:${x}px` }, p.label, el("span", { class: "sg-dt" }, p.mn !== p.mx ? fmtMD(p.mn) + "〜" + fmtMD(p.mx) : fmtMD(p.mn)));
       nodes.push(dotEl, labelEl);
-      wireDot(dotEl, p, view, g, m, lock);
+      wireDot(dotEl, p, view, g, m);
     });
     return nodes;
   }
@@ -1208,7 +1293,8 @@
       el("span", { class: "sg-nmwrap" },
         el("span", { class: "sg-nm" }, g.name, el("span", { class: "sg-cnt" }, g.children.length + "本")),
         el("span", { class: "sg-sub" }, owners + " ", tag))));
-    const track = trackCellsEl(range, dayCount);
+    const rowKey = rowKeyFor(g, null);
+    const track = trackCellsEl(range, dayCount, view, rowKey);
     const lock = gateLockActive(view, g.name);
     const pts = [];
     cfg.steps.forEach((label, i) => {
@@ -1222,6 +1308,7 @@
       else st = states.includes("brief") ? "brief" : "plan";
       pts.push({ i, label, mn: ds[0], mx: ds[ds.length - 1], st });
     });
+    customForRow(view, rowKey).forEach(c => pts.push({ label: c.label, mn: c.date, mx: c.date, st: customVisualState(c), custom: c }));
     track.append(...ganttPoints(pts, range, view, g, null));
     tr.append(track);
     return tr;
@@ -1233,13 +1320,15 @@
       el("span", { class: "sg-nmwrap" },
         el("span", { class: "sg-nm" }, g.name + " " + label),
         el("span", { class: "sg-sub" }, (m.owner || "") + " ", el("span", { class: "sg-tag " + (m.listMethod === "AI" ? "ai" : "kiro") }, m.listMethod === "AI" ? "AI" : "既ロ")))));
-    const track = trackCellsEl(range, dayCount);
+    const rowKey = rowKeyFor(g, m);
+    const track = trackCellsEl(range, dayCount, view, rowKey);
     const lock = gateLockActive(view, g.name);
     const pts = [];
     cfg.steps.forEach((label2, i) => {
       const d = stepDate(view, m, i); if (!d) return;
       pts.push({ i, label: label2, mn: d, mx: d, st: stepVisualState(view, m, i, lock) });
     });
+    customForRow(view, rowKey).forEach(c => pts.push({ label: c.label, mn: c.date, mx: c.date, st: customVisualState(c), custom: c }));
     track.append(...ganttPoints(pts, range, view, g, m));
     tr.append(track);
     return tr;
@@ -1486,8 +1575,9 @@
     if (!state.model) { alert("先に「対象月」で月を選ぶか、「＋新規」で作成してください。"); return; }
     if (!state.user) { alert("先に右上のお名前を入力してください。"); return; }
     const editBtnEl = $("#editBtn"); if (editBtnEl) editBtnEl.disabled = true;   // 確認中は連打防止＋反応した見た目に
+    // 同時に何人が接続していても編集できるようにする（ロックはブロックしない。情報表示のみ）
     const lock = await S.readLock(state.month);
-    if (lock && lock.user !== state.user) { alert(`${lock.user} さんが使用しています。編集できません（閲覧のみ）。`); await renderLockBar(); return; }
+    if (lock && lock.user !== state.user) flash(`${lock.user} さんも編集中の可能性があります。保存内容にご注意ください。`);
     await S.writeLock(state.month, { user: state.user, ts: Date.now() });
     state.editing = true; rerender();
   }
