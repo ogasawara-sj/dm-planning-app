@@ -1171,12 +1171,19 @@
         e.preventDefault();
         if (!state.editing) { flash("編集モードにしてから操作してください"); return; }
         const rect = track.getBoundingClientRect();
-        const dayIdx = Math.max(0, Math.min(dayCount - 1, Math.floor((e.clientX - rect.left) / CW)));
+        const cw = rect.width / dayCount;   // 実際に描画されているセル幅（画面のズーム表示に対応。CWは論理値のためズレる）
+        const dayIdx = Math.max(0, Math.min(dayCount - 1, Math.floor((e.clientX - rect.left) / cw)));
         const date = addDaysISO(range.from, dayIdx);
         openCtxMenu([{ label: `＋ ${fmtMD(date)} に工程を追加`, onClick: () => openAddCustomModal(view, rowKey, date) }], e.clientX, e.clientY);
       });
     }
     return track;
+  }
+  // 実際に描画されている1日ぶんのセル幅（px）。html{zoom}等の表示倍率があってもズレないよう、
+  // 固定値のCWではなくDOM上の実測値（.sg-tcellの実際の描画幅）を使う
+  function trackCellWidth(track) {
+    const c = track && track.querySelector(".sg-tcell");
+    return c ? c.getBoundingClientRect().width : CW;
   }
   function openCtxMenu(items, x, y) {
     closeColMenu();
@@ -1233,9 +1240,12 @@
     dotEl.addEventListener("mousedown", e => {
       if (e.button !== 0) return;
       e.preventDefault();
+      // マウスの移動量は実際の描画px（画面のズーム表示を含む）で届くため、日数への換算は実測セル幅を使う。
+      // 一方dotEl.style.leftは論理px（CW基準）で管理しているので、位置の書き戻しはCWのまま。
+      const cwPx = trackCellWidth(dotEl.parentElement);
       const sx = e.clientX, baseLeft = parseFloat(dotEl.style.left); let days = 0, moved = false;
       dotEl.classList.add("drag");
-      function mv(ev) { days = Math.round((ev.clientX - sx) / CW); if (days !== 0) moved = true; dotEl.style.left = (baseLeft + days * CW) + "px"; }
+      function mv(ev) { days = Math.round((ev.clientX - sx) / cwPx); if (days !== 0) moved = true; dotEl.style.left = (baseLeft + days * CW) + "px"; }
       function up() {
         document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up);
         dotEl.classList.remove("drag");
