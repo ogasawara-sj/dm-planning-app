@@ -1123,6 +1123,26 @@
     if (diffDaysISO(c.date, todayISO()) > 0) return "late";
     return "plan";
   }
+  // 表示中のスケジュールタブで「今日より前・未完了（＝late表示）」の工程をまとめて完了にする
+  function markAllPastDone() {
+    if (!state.editing) { flash("編集モードにしてから操作してください"); return; }
+    const view = state.tab; const cfg = SCHED[view];
+    if (!cfg) return;
+    let n = 0;
+    scheduleGroups().forEach(g => {
+      const lock = gateLockActive(view, g.name);
+      g.children.forEach(m => {
+        cfg.steps.forEach((_, i) => {
+          if (i === cfg.steps.length - 1) return;   // 入稿/宛名入稿(=軸そのもの)は対象外
+          if (stepVisualState(view, m, i, lock) === "late") { setStepDone(view, m, i, true); n++; }
+        });
+        customForRow(view, rowKeyFor(g, m)).forEach(c => { if (customVisualState(c) === "late") { c.done = true; n++; } });
+      });
+      customForRow(view, rowKeyFor(g, null)).forEach(c => { if (customVisualState(c) === "late") { c.done = true; n++; } });
+    });
+    if (n > 0) { markDirty(); renderScheduleBoard(); flash(`${n}件を完了にしました`); }
+    else flash("今日より前で未完了のものはありませんでした");
+  }
   function scheduleRange(view) {
     const cfg = SCHED[view], dates = [];
     scheduleGroups().forEach(g => g.children.forEach(m => cfg.steps.forEach((_, i) => { const d = stepDate(view, m, i); if (d) dates.push(d); })));
@@ -1394,6 +1414,9 @@
     const expBtn = el("button", { class: "btn small ghost" }, anyOpen ? "▲ すべて閉じる" : "▼ すべて開く");
     expBtn.addEventListener("click", () => { const open = !anyOpen; groups.forEach(g => state.schedOpen[g.name] = open); renderScheduleBoard(); });
     controls.append(expBtn);
+    const pastBtn = el("button", { class: "btn small ghost", title: "今日より前の日付で、まだ完了になっていない工程をまとめて完了（☑）にします" }, "☑ 今日より前を完了に");
+    pastBtn.addEventListener("click", markAllPastDone);
+    controls.append(pastBtn);
     root.append(controls);
 
     if (!groups.length) { root.append(el("div", { class: "placeholder" }, "「施策一覧」タブで施策名を入力すると、ここにスケジュールが表示されます。")); return; }
