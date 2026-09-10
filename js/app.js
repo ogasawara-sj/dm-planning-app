@@ -1471,6 +1471,59 @@
       ? "いちばん左が「企画連携」。グレーの錠マークをクリックすると5項目のチェックが出ます。OKまたは不要がすべて選ばれると錠が外れて連携完了にできます。入稿日はタナカの締切なので全施策共通（青の縦線）。"
       : "AI施策はGV社への提供があるぶん早め、既存ロジックはGV工程なし（GV共有・スコアリングを省略）で遅めに自動設定されます。宛名入稿はTCIの締切なので全施策共通（青の縦線）。丸は右クリックでメモの追加や工程の追加ができます。"));
     root.append(sec);
+    root.append(renderTodoSection(view, cfg, groups));
+  }
+  // 遅延（⚠）と、今日から1週間以内に来る工程を、上のガントと連動するTODOリストとして表示する
+  function scheduleTodoItems(view, cfg, groups) {
+    const today = todayISO();
+    const items = [];
+    groups.forEach(g => {
+      const lock = gateLockActive(view, g.name);
+      cfg.steps.forEach((label, i) => {
+        if (i === cfg.steps.length - 1) return;   // 入稿/宛名入稿(=軸そのもの)は対象外
+        const ds = g.children.map(m => stepDate(view, m, i)).filter(Boolean);
+        if (!ds.length) return;
+        const states = g.children.map(m => stepVisualState(view, m, i, lock)).filter(Boolean);
+        if (!states.length || states.includes("lock")) return;   // ゲート未解決は対象外（チェックしても完了にできないため）
+        if (states.every(s => s === "done" || s === "fix")) return;   // 既に完了
+        ds.sort();
+        const date = ds[0];
+        const diff = diffDaysISO(date, today);
+        const bucket = diff > 0 ? "late" : (diff >= -7 ? "soon" : null);
+        if (bucket) items.push({ view, group: g, stepIndex: i, label, date, bucket });
+      });
+      customForRow(view, rowKeyFor(g, null)).forEach(c => {
+        if (c.done) return;
+        const diff = diffDaysISO(c.date, today);
+        const bucket = diff > 0 ? "late" : (diff >= -7 ? "soon" : null);
+        if (bucket) items.push({ view, group: g, custom: c, label: c.label, date: c.date, bucket });
+      });
+    });
+    items.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    return items;
+  }
+  function completeTodoItem(item) {
+    if (!state.editing) { flash("編集モードにしてから操作してください"); return; }
+    if (item.custom) item.custom.done = true;
+    else item.group.children.forEach(m => { if (stepDate(item.view, m, item.stepIndex)) setStepDone(item.view, m, item.stepIndex, true); });
+    markDirty(); renderScheduleBoard();
+  }
+  function renderTodoSection(view, cfg, groups) {
+    const items = scheduleTodoItems(view, cfg, groups);
+    const sec = el("section", { class: "sg-todo-sec" });
+    sec.append(el("div", { class: "sg-todo-head" }, "TODO：遅延・1週間以内の工程", el("span", { class: "sg-todo-count" }, items.length + "件")));
+    if (!items.length) { sec.append(el("div", { class: "sg-todo-empty" }, "遅延・直近1週間の工程はありません。")); return sec; }
+    const list = el("div", { class: "sg-todo-list" });
+    items.forEach(item => {
+      const chk = el("input", { type: "checkbox" });
+      chk.addEventListener("change", () => completeTodoItem(item));
+      const badge = el("span", { class: "sg-todo-badge " + item.bucket }, item.bucket === "late" ? "遅延" : "期限間近");
+      list.append(el("div", { class: "sg-todo-item " + item.bucket }, chk, badge,
+        el("span", { class: "sg-todo-name" }, item.group.name + " ー " + item.label),
+        el("span", { class: "sg-todo-date" }, fmtMD(item.date))));
+    });
+    sec.append(list);
+    return sec;
   }
   function renderKickoffCard() {
     const box = $("#kickoffCard"); if (!box) return; box.innerHTML = "";
