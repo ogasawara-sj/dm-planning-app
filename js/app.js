@@ -1190,20 +1190,20 @@
       track.addEventListener("contextmenu", e => {
         e.preventDefault();
         if (!state.editing) { flash("編集モードにしてから操作してください"); return; }
-        const rect = track.getBoundingClientRect();
-        const cw = rect.width / dayCount;   // 実際に描画されているセル幅（画面のズーム表示に対応。CWは論理値のためズレる）
-        const dayIdx = Math.max(0, Math.min(dayCount - 1, Math.floor((e.clientX - rect.left) / cw)));
+        const dayIdx = dayIndexAtX(track, e.clientX);
         const date = addDaysISO(range.from, dayIdx);
         openCtxMenu([{ label: `＋ ${fmtMD(date)} に工程を追加`, onClick: () => openAddCustomModal(view, rowKey, date) }], e.clientX, e.clientY);
       });
     }
     return track;
   }
-  // 実際に描画されている1日ぶんのセル幅（px）。html{zoom}等の表示倍率があってもズレないよう、
-  // 固定値のCWではなくDOM上の実測値（.sg-tcellの実際の描画幅）を使う
-  function trackCellWidth(track) {
-    const c = track && track.querySelector(".sg-tcell");
-    return c ? c.getBoundingClientRect().width : CW;
+  // クリック位置(clientX)が実際にどの日のセルの上にあるかを、DOM上の実測の境界で判定する。
+  // 「セル幅の平均値」で割り算すると1px未満の丸め誤差が積み重なり、左端から離れるほどズレるため、
+  // 各セルの実際の描画位置(getBoundingClientRect)を直接調べて確実に一致させる。
+  function dayIndexAtX(track, clientX) {
+    const cells = track.querySelectorAll(".sg-tcell");
+    for (let i = 0; i < cells.length; i++) { if (clientX < cells[i].getBoundingClientRect().right) return i; }
+    return cells.length - 1;
   }
   function openCtxMenu(items, x, y) {
     closeColMenu();
@@ -1260,12 +1260,14 @@
     dotEl.addEventListener("mousedown", e => {
       if (e.button !== 0) return;
       e.preventDefault();
-      // マウスの移動量は実際の描画px（画面のズーム表示を含む）で届くため、日数への換算は実測セル幅を使う。
-      // 一方dotEl.style.leftは論理px（CW基準）で管理しているので、位置の書き戻しはCWのまま。
-      const cwPx = trackCellWidth(dotEl.parentElement);
-      const sx = e.clientX, baseLeft = parseFloat(dotEl.style.left); let days = 0, moved = false;
+      // マウスの移動量から日数を出すのではなく、開始位置と現在位置が実際にどの日セルの上にあるかを
+      // それぞれ実測して差を取る（平均セル幅で割り算すると丸め誤差が蓄積してズレるため）。
+      // dotEl.style.left自体は論理px（CW基準）で管理しているので、位置の書き戻しはCWのまま。
+      const track = dotEl.parentElement;
+      const startIdx = dayIndexAtX(track, e.clientX);
+      const baseLeft = parseFloat(dotEl.style.left); let days = 0, moved = false;
       dotEl.classList.add("drag");
-      function mv(ev) { days = Math.round((ev.clientX - sx) / cwPx); if (days !== 0) moved = true; dotEl.style.left = (baseLeft + days * CW) + "px"; }
+      function mv(ev) { const d = dayIndexAtX(track, ev.clientX) - startIdx; if (d !== 0) moved = true; days = d; dotEl.style.left = (baseLeft + days * CW) + "px"; }
       function up() {
         document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up);
         dotEl.classList.remove("drag");
@@ -1379,7 +1381,12 @@
     const arr = groupGate(g.name);
     const pop = el("div", { class: "sg-gatepop", id: "colMenu" });
     pop.addEventListener("click", e => e.stopPropagation());
-    pop.append(el("div", { class: "sg-gatepop-h" }, g.name + " 企画連携チェック"));
+    const allOkBtn = el("button", { class: "sg-gatepop-b", title: "この5項目すべてをOKにする" }, "全てOK");
+    allOkBtn.addEventListener("click", () => {
+      for (let i = 0; i < arr.length; i++) arr[i] = "ok";
+      markDirty(); closeColMenu(); renderScheduleBoard();
+    });
+    pop.append(el("div", { class: "sg-gatepop-h" }, el("span", {}, g.name + " 企画連携チェック"), allOkBtn));
     cfg.gateItems.forEach((item, idx) => {
       const rowEl = el("div", { class: "sg-gatepop-row" }, el("span", { class: "sg-gatepop-t" }, item));
       const mk = (val, label) => {
@@ -1447,7 +1454,19 @@
     });
     cal.append(body);
     addOverlayLines(cal, cfg, range);
-    sec.append(el("div", { class: "sg-scroll" }, cal));
+    const scrollBox = el("div", { class: "sg-scroll" }, cal);
+    sec.append(scrollBox);
+    // 横スクロール用のスライドバー（ネイティブのスクロールバーが掴みにくいための代替操作）
+    const slider = el("input", { type: "range", class: "sg-hslider", min: "0", max: "1000", value: "0" });
+    slider.addEventListener("input", () => {
+      const maxScroll = Math.max(0, scrollBox.scrollWidth - scrollBox.clientWidth);
+      scrollBox.scrollLeft = (Number(slider.value) / 1000) * maxScroll;
+    });
+    scrollBox.addEventListener("scroll", () => {
+      const maxScroll = Math.max(1, scrollBox.scrollWidth - scrollBox.clientWidth);
+      slider.value = String(Math.round((scrollBox.scrollLeft / maxScroll) * 1000));
+    });
+    sec.append(el("div", { class: "sg-hslider-wrap" }, slider));
     sec.append(el("div", { class: "sg-hint" }, view === "design"
       ? "いちばん左が「企画連携」。グレーの錠マークをクリックすると5項目のチェックが出ます。OKまたは不要がすべて選ばれると錠が外れて連携完了にできます。入稿日はタナカの締切なので全施策共通（青の縦線）。"
       : "AI施策はGV社への提供があるぶん早め、既存ロジックはGV工程なし（GV共有・スコアリングを省略）で遅めに自動設定されます。宛名入稿はTCIの締切なので全施策共通（青の縦線）。丸は右クリックでメモの追加や工程の追加ができます。"));
