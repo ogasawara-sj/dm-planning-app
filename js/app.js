@@ -1029,9 +1029,20 @@
   // 手動でドラッグして直した項目だけを model.schedule.overrides に差分保存する（他は毎回再計算＝保存しない）。
   const SCHED = {
     design: {
-      steps: ["企画連携", "オリエン", "初校", "初校チェック", "2校", "2校チェック", "校了", "入稿"],
-      owners: ["CRM", "デザイン", "デザイン", "CRM", "デザイン", "CRM", "CRM", "デザイン"],
-      offsets: [27, 25, 14, 12, 7, 5, 1, 0],   // データ入稿日からの逆算日数（実データより算出。個別事情はドラッグで調整）
+      steps: ["基本情報入力", "QRコードURL作成", "価格表作成", "QR紐づけ作業", "RO決定", "企画連携", "オリエン", "初校", "2校", "校了", "KUROSHIO登録完了日", "入稿"],
+      owners: ["CRM", "CRM", "CRM", "CRM", "CRM", "CRM", "デザイン", "デザイン", "デザイン", "CRM", "CRM", "デザイン"],
+      // 企画連携〜入稿はデータ入稿日からの逆算日数（実データより算出。個別事情はドラッグで調整）。
+      // 基本情報入力〜RO決定・KUROSHIO登録完了日は下のspecialDatesで「毎月◯日（土日は前倒し）」を優先する
+      offsets: [null, null, null, null, null, 52, 51, 49, 46, 38, null, 0],
+      specialDates: {
+        0: { day: 11, monthsBefore: 2 },    // 基本情報入力：発送月の2か月前・11日
+        1: { day: 11, monthsBefore: 2 },    // QRコードURL作成
+        2: { day: 11, monthsBefore: 2 },    // 価格表作成
+        3: { day: 18, monthsBefore: 2 },    // QR紐づけ作業
+        4: { day: 24, monthsBefore: 2 },    // RO決定
+        10: { day: 20, monthsBefore: 1 },   // KUROSHIO登録完了日：発送月の1か月前・20日
+      },
+      gateIndex: 5,   // 企画連携チェック（鍵）の対象ステップ
       axisField: "designAxis", axisLabel: "データ入稿日",
       gateItems: ["PMとの確認", "PMからの訴求優先度", "過去施策からの設計根拠", "表現の法務確認", "価格・CTAの他チャネル整合"],
     },
@@ -1056,8 +1067,27 @@
 
   function schedStore() { return state.model.schedule; }
   function stepKey(mId, view, i) { return mId + ":" + view + ":" + i; }
+  // 「発送月の◯か月前・△日（土日は前倒しで直前の営業日）」形式の固定日付
+  function monthsBeforeYYYYMM(yyyymm, n) {
+    let y = parseInt(yyyymm.slice(0, 4), 10), mo = parseInt(yyyymm.slice(4, 6), 10);
+    mo -= n;
+    while (mo <= 0) { mo += 12; y -= 1; }
+    return `${y}${String(mo).padStart(2, "0")}`;
+  }
+  function bizDayOnOrBefore(yyyymm, day) {
+    const y = parseInt(yyyymm.slice(0, 4), 10), mo = parseInt(yyyymm.slice(4, 6), 10);
+    const d = new Date(y, mo - 1, day);
+    const wd = d.getDay();
+    if (wd === 6) d.setDate(d.getDate() - 1);        // 土曜→金曜
+    else if (wd === 0) d.setDate(d.getDate() - 2);   // 日曜→金曜
+    return isoOf(d);
+  }
   function autoStepDate(view, m, i) {
     const cfg = SCHED[view];
+    if (cfg.specialDates && cfg.specialDates[i] && state.month) {
+      const sd = cfg.specialDates[i];
+      return bizDayOnOrBefore(monthsBeforeYYYYMM(state.month, sd.monthsBefore), sd.day);
+    }
     const axis = state.model[cfg.axisField];
     if (!axis) return "";
     const offsets = view === "tci" ? (m.listMethod === "AI" ? cfg.offsetsAI : cfg.offsetsKiro) : cfg.offsets;
@@ -1111,11 +1141,11 @@
   function stepVisualState(view, m, i, lockHere) {
     const cfg = SCHED[view];
     if (i === cfg.steps.length - 1) return "fix";   // 最終ステップ＝入稿/宛名入稿＝軸そのもの（操作不可）
-    if (lockHere && i === 0) return "lock";
+    if (lockHere && i === (cfg.gateIndex ?? 0)) return "lock";
     if (stepDone(view, m, i)) return "done";
     const d = stepDate(view, m, i); if (!d) return null;
     if (diffDaysISO(d, todayISO()) > 0) return "late";
-    if (view === "design" && i < 2) return "brief";
+    if (view === "design" && i < 6) return "brief";
     return "plan";
   }
   function customVisualState(c) {
