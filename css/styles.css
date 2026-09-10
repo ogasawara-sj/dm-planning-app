@@ -525,6 +525,6 @@ body.readonly .sg-ms.drag, body.readonly .sg-ms { cursor: default; }
 .sg-todo-badge { font-size: 10.5px; font-weight: 700; border-radius: 6px; padding: 2px 8px; flex: none; }
 .sg-todo-badge.late { background: var(--danger-soft); color: var(--danger); }
 .sg-todo-badge.soon { background: #efe9ff; color: #6d4fd6; }
-.sg-todo-name { flex: 1; color: var(--ink); }
+.sg-todo-name { flex: none; color: var(--ink); }
 .sg-todo-date { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
 body.readonly .sg-todo-item input[type=checkbox] { pointer-events: none; opacity: .6; }
