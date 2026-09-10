@@ -177,26 +177,18 @@
     months.forEach(m => sel.append(el("option", { value: m }, window.monthLabel(m))));
     if (state.month && months.includes(state.month)) sel.value = state.month;
   }
+  // 閲覧/編集モードは廃止し、常に編集可能にする（共有フォルダに接続・お名前が入っていれば自動で編集状態）。
+  // ロックは他の人が同時に開いているかもしれない、という情報表示のみに使う
   async function renderLockBar() {
-    const view = $("#viewBtn"), edit = $("#editBtn"), note = $("#lockNote");
+    const note = $("#lockNote");
     if (note) { note.textContent = ""; note.className = "lock-note"; }
-    const setMode = (editing) => { if (edit) edit.classList.toggle("on", editing); if (view) view.classList.toggle("on", !editing); };
-    // 未接続：閲覧のみ・編集不可
     if (!S.isConnected()) {
-      setMode(false); if (edit) edit.disabled = true; if (view) view.disabled = true;
       if (note) { note.className = "lock-note"; note.append(icon("folder"), " 共有フォルダに接続してください"); }
       document.body.classList.add("readonly"); return;
     }
     const lock = state.month ? await S.readLock(state.month) : null;
     const mine = lock && lock.user === state.user;
-    if (state.editing) {
-      setMode(true); if (edit) edit.disabled = false; if (view) view.disabled = false;
-    } else {
-      setMode(false); if (view) view.disabled = false;
-      // 同時に何人が共有フォルダへ接続していても編集できるようにする（ロックはブロックせず、情報表示のみ）
-      if (edit) edit.disabled = !state.model;
-      if (lock && !mine && note) { note.className = "lock-note"; note.append(icon("users"), ` ${lock.user} さんも編集中の可能性があります（同時編集にご注意ください）`); }
-    }
+    if (lock && !mine && note) { note.className = "lock-note"; note.append(icon("users"), ` ${lock.user} さんも編集中の可能性があります（同時編集にご注意ください）`); }
     document.body.classList.toggle("readonly", !state.editing);
   }
   function renderSummary() {
@@ -865,7 +857,6 @@
     const activeFilters = {};
     Object.keys(state.filters || {}).forEach(k => { if (state.filters[k] != null) activeFilters[k] = state.filters[k]; });
     if (Object.keys(activeFilters).length) params.set("filters", JSON.stringify(activeFilters));
-    if (state.editing) params.set("edit", "1");   // 今が編集モードなら、開く先でも編集モードを引き継ぐ
     return location.pathname + "?" + params.toString();
   }
   async function dropMeasureToMonth(targetMonth) {
@@ -1029,20 +1020,21 @@
   // 手動でドラッグして直した項目だけを model.schedule.overrides に差分保存する（他は毎回再計算＝保存しない）。
   const SCHED = {
     design: {
-      steps: ["基本情報入力", "QRコードURL作成", "価格表作成", "QR紐づけ作業", "RO決定", "企画連携", "オリエン", "初校", "2校", "校了", "KUROSHIO登録完了日", "入稿"],
-      owners: ["CRM", "CRM", "CRM", "CRM", "CRM", "CRM", "デザイン", "デザイン", "デザイン", "CRM", "CRM", "デザイン"],
+      steps: ["基本情報入力／QR作成／価格表作成", "RO決定", "企画連携", "オリエン", "初校", "2校", "校了", "入稿"],
+      owners: ["CRM", "CRM", "CRM", "デザイン", "デザイン", "デザイン", "CRM", "デザイン"],
       // 企画連携〜入稿はデータ入稿日からの逆算日数（実データより算出。個別事情はドラッグで調整）。
-      // 基本情報入力〜RO決定・KUROSHIO登録完了日は下のspecialDatesで「毎月◯日（土日は前倒し）」を優先する
-      offsets: [null, null, null, null, null, 52, 51, 49, 46, 38, null, 0],
+      // 基本情報入力〜RO決定は下のspecialDatesで「毎月◯日（土日は前倒し）」を優先する
+      offsets: [null, null, 52, 51, 49, 46, 38, 0],
       specialDates: {
-        0: { day: 11, monthsBefore: 2 },    // 基本情報入力：発送月の2か月前・11日
-        1: { day: 11, monthsBefore: 2 },    // QRコードURL作成
-        2: { day: 11, monthsBefore: 2 },    // 価格表作成
-        3: { day: 18, monthsBefore: 2 },    // QR紐づけ作業
-        4: { day: 24, monthsBefore: 2 },    // RO決定
-        10: { day: 20, monthsBefore: 1 },   // KUROSHIO登録完了日：発送月の1か月前・20日
+        0: { day: 11, monthsBefore: 2 },    // 基本情報入力／QRコードURL作成／価格表作成：発送月の2か月前・11日
+        1: { day: 24, monthsBefore: 2 },    // RO決定
       },
-      gateIndex: 5,   // 企画連携チェック（鍵）の対象ステップ
+      gateIndex: 2,   // 企画連携チェック（鍵）の対象ステップ
+      // 全施策共通の縦線（施策ごとの丸ではなく、データ入稿日と同じ見た目で1本だけ表示。ドラッグで日付変更可）
+      commonLines: [
+        { key: "qrLink", label: "QR紐づけ完了日", color: "#c2410c", day: 18, monthsBefore: 2 },
+        { key: "kuroshio", label: "KUROSHIO登録完了日", color: "#15803d", day: 20, monthsBefore: 1 },
+      ],
       axisField: "designAxis", axisLabel: "データ入稿日",
       gateItems: ["PMとの確認", "PMからの訴求優先度", "過去施策からの設計根拠", "表現の法務確認", "価格・CTAの他チャネル整合"],
     },
@@ -1104,6 +1096,18 @@
     else schedStore().overrides[stepKey(m.id, view, i)] = iso;
     setStepDone(view, m, i, false);   // 日付を動かしたら未完了に戻す
   }
+  // 全施策共通の縦線（QR紐づけ完了日・KUROSHIO登録完了日など）：施策ごとではなく月に1つの日付
+  function milestoneKey(view, key) { return "milestone:" + view + ":" + key; }
+  function milestoneAutoDate(ml) {
+    if (!state.month) return "";
+    return bizDayOnOrBefore(monthsBeforeYYYYMM(state.month, ml.monthsBefore), ml.day);
+  }
+  function milestoneDate(view, ml) { const ov = schedStore().overrides[milestoneKey(view, ml.key)]; return ov || milestoneAutoDate(ml); }
+  function setMilestoneDate(view, ml, iso) {
+    const auto = milestoneAutoDate(ml);
+    if (iso === auto) delete schedStore().overrides[milestoneKey(view, ml.key)];
+    else schedStore().overrides[milestoneKey(view, ml.key)] = iso;
+  }
   function groupGate(name) { const g = schedStore().gates; if (!g[name]) g[name] = ["", "", "", "", ""]; return g[name]; }
   function listGateArr() { return schedStore().listGate; }
   function kickoffObj() { return schedStore().kickoff; }
@@ -1145,7 +1149,7 @@
     if (stepDone(view, m, i)) return "done";
     const d = stepDate(view, m, i); if (!d) return null;
     if (diffDaysISO(d, todayISO()) > 0) return "late";
-    if (view === "design" && i < 6) return "brief";
+    if (view === "design" && i < 3) return "brief";
     return "plan";
   }
   function customVisualState(c) {
@@ -1213,27 +1217,32 @@
     const track = el("div", { class: "sg-track", style: `width:${dayCount * CW}px` });
     let d = parseISO(range.from);
     for (let i = 0; i < dayCount; i++) {
-      track.append(el("div", { class: "sg-tcell" + ((d.getDay() === 0 || d.getDay() === 6) ? " we" : ""), style: `width:${CW}px` }));
+      track.append(el("div", { class: "sg-tcell" + ((d.getDay() === 0 || d.getDay() === 6) ? " we" : ""), style: `width:${CW}px`, "data-date": isoOf(d) }));
       d.setDate(d.getDate() + 1);
     }
     if (view && rowKey) {
       track.addEventListener("contextmenu", e => {
         e.preventDefault();
         if (!state.editing) { flash("編集モードにしてから操作してください"); return; }
-        const dayIdx = dayIndexAtX(track, e.clientX);
-        const date = addDaysISO(range.from, dayIdx);
+        const date = dateAtPoint(track, e);
         openCtxMenu([{ label: `＋ ${fmtMD(date)} に工程を追加`, onClick: () => openAddCustomModal(view, rowKey, date) }], e.clientX, e.clientY);
       });
     }
     return track;
   }
-  // クリック位置(clientX)が実際にどの日のセルの上にあるかを、DOM上の実測の境界で判定する。
-  // 「セル幅の平均値」で割り算すると1px未満の丸め誤差が積み重なり、左端から離れるほどズレるため、
-  // 各セルの実際の描画位置(getBoundingClientRect)を直接調べて確実に一致させる。
-  function dayIndexAtX(track, clientX) {
+  // クリック位置がどの日のセルの上にあるかを求める。
+  // まずブラウザ自身のヒットテスト（e.target / elementFromPoint）でセルのdata-dateを直接読み取り、
+  // それでも取れない場合だけ座標計算にフォールバックする（zoom表示等でのpx丸め誤差の影響を受けない）。
+  function dateAtPoint(track, e) {
+    let cell = e.target && e.target.closest && e.target.closest(".sg-tcell");
+    if (!cell && document.elementFromPoint) { const el2 = document.elementFromPoint(e.clientX, e.clientY); cell = el2 && el2.closest && el2.closest(".sg-tcell"); }
+    if (cell && cell.dataset.date) return cell.dataset.date;
+    return fallbackDateAtX(track, e.clientX);
+  }
+  function fallbackDateAtX(track, clientX) {
     const cells = track.querySelectorAll(".sg-tcell");
-    for (let i = 0; i < cells.length; i++) { if (clientX < cells[i].getBoundingClientRect().right) return i; }
-    return cells.length - 1;
+    for (let i = 0; i < cells.length; i++) { if (clientX < cells[i].getBoundingClientRect().right) return cells[i].dataset.date; }
+    return cells.length ? cells[cells.length - 1].dataset.date : "";
   }
   function openCtxMenu(items, x, y) {
     closeColMenu();
@@ -1294,10 +1303,10 @@
       // それぞれ実測して差を取る（平均セル幅で割り算すると丸め誤差が蓄積してズレるため）。
       // dotEl.style.left自体は論理px（CW基準）で管理しているので、位置の書き戻しはCWのまま。
       const track = dotEl.parentElement;
-      const startIdx = dayIndexAtX(track, e.clientX);
+      const startDate = fallbackDateAtX(track, e.clientX);
       const baseLeft = parseFloat(dotEl.style.left); let days = 0, moved = false;
       dotEl.classList.add("drag");
-      function mv(ev) { const d = dayIndexAtX(track, ev.clientX) - startIdx; if (d !== 0) moved = true; days = d; dotEl.style.left = (baseLeft + days * CW) + "px"; }
+      function mv(ev) { const d = diffDaysISO(startDate, fallbackDateAtX(track, ev.clientX)); if (d !== 0) moved = true; days = d; dotEl.style.left = (baseLeft + days * CW) + "px"; }
       function up() {
         document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up);
         dotEl.classList.remove("drag");
@@ -1359,14 +1368,11 @@
   function scheduleGroupRow(view, cfg, g, range, dayCount) {
     const tr = el("div", { class: "sg-row" });
     const fc = familyColorOf(g.children[0]) || "#9aa3b2";
-    const open = !!state.schedOpen[g.name];
-    const chev = el("button", { class: "sg-chev" }, icon(open ? "chevron-down" : "chevron-right"));
-    chev.addEventListener("click", () => { state.schedOpen[g.name] = !open; renderScheduleBoard(); });
     const owners = [...new Set(g.children.flatMap(m => (m.owner || "").split("/").filter(Boolean)))].join("/");
     const anyAI = g.children.some(m => m.listMethod === "AI"), anyKiro = g.children.some(m => m.listMethod !== "AI");
     const tag = (anyAI && anyKiro) ? el("span", { class: "sg-tag mix" }, "AI+既ロ") : el("span", { class: "sg-tag " + (anyAI ? "ai" : "kiro") }, anyAI ? "AI" : "既ロ");
     tr.append(el("div", { class: "sg-lbl", style: `width:${LBL}px` },
-      chev, el("span", { class: "sg-band", style: `background:${fc}` }),
+      el("span", { class: "sg-band", style: `background:${fc}` }),
       el("span", { class: "sg-nmwrap" },
         el("span", { class: "sg-nm" }, g.name, el("span", { class: "sg-cnt" }, g.children.length + "本")),
         el("span", { class: "sg-sub" }, owners + " ", tag))));
@@ -1396,34 +1402,48 @@
     const maxCluster = clusterPtsByX(pts, range).reduce((mx, c) => Math.max(mx, c.length), 1);
     if (maxCluster > 1) tr.style.height = (base + (maxCluster - 1) * 16 + 14) + "px";
   }
-  function scheduleChildRow(view, cfg, g, m, range, dayCount) {
-    const tr = el("div", { class: "sg-row sg-child" });
-    const label = kindLabel(m);
-    tr.append(el("div", { class: "sg-lbl", style: `width:${LBL}px` },
-      el("span", { class: "sg-nmwrap" },
-        el("span", { class: "sg-nm" }, g.name + " " + label),
-        el("span", { class: "sg-sub" }, (m.owner || "") + " ", el("span", { class: "sg-tag " + (m.listMethod === "AI" ? "ai" : "kiro") }, m.listMethod === "AI" ? "AI" : "既ロ")))));
-    const rowKey = rowKeyFor(g, m);
-    const track = trackCellsEl(range, dayCount, view, rowKey);
-    const lock = gateLockActive(view, g.name);
-    const pts = [];
-    cfg.steps.forEach((label2, i) => {
-      const d = stepDate(view, m, i); if (!d) return;
-      pts.push({ i, label: label2, mn: d, mx: d, st: stepVisualState(view, m, i, lock) });
+  // 縦線（データ入稿日／共通マイルストーン）をドラッグして日付を動かせるようにする。タグをつかんで左右に動かす。
+  function wireMilestoneDrag(tagEl, lineEl, refTrack, getDate, setDate, labelPrefix) {
+    if (!state.editing || !refTrack) { tagEl.style.cursor = "default"; return; }
+    tagEl.style.cursor = "grab";
+    tagEl.addEventListener("mousedown", e => {
+      if (e.button !== 0) return;
+      e.preventDefault(); e.stopPropagation();
+      const startDate = fallbackDateAtX(refTrack, e.clientX);
+      const baseLineLeft = parseFloat(lineEl.style.left), baseTagLeft = parseFloat(tagEl.style.left);
+      let days = 0;
+      tagEl.classList.add("drag");
+      function mv(ev) {
+        days = diffDaysISO(startDate, fallbackDateAtX(refTrack, ev.clientX));
+        lineEl.style.left = (baseLineLeft + days * CW) + "px";
+        tagEl.style.left = (baseTagLeft + days * CW) + "px";
+      }
+      function up() {
+        document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up);
+        tagEl.classList.remove("drag");
+        if (days !== 0) { setDate(addDaysISO(getDate(), days)); markDirty(); }
+        renderScheduleBoard();
+      }
+      document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up);
     });
-    customForRow(view, rowKey).forEach(c => pts.push({ label: c.label, mn: c.date, mx: c.date, st: customVisualState(c), custom: c }));
-    growRowForClusters(tr, pts, range, 50);
-    track.append(...ganttPoints(pts, range, view, g, m));
-    tr.append(track);
-    return tr;
   }
-  function addOverlayLines(cal, cfg, range) {
+  function addOverlayLines(cal, cfg, range, view, refTrack) {
     const axis = state.model[cfg.axisField];
     if (axis && diffDaysISO(range.from, axis) >= 0) {
       const x = LBL + xOf(range, axis);
-      cal.append(el("div", { class: "sg-axisline", style: `left:${x}px` }));
-      cal.append(el("div", { class: "sg-axistag", style: `left:${x}px` }, cfg.axisLabel + " " + fmtMD(axis)));
+      const line = el("div", { class: "sg-axisline", style: `left:${x}px` });
+      const tag = el("div", { class: "sg-axistag", style: `left:${x}px` }, cfg.axisLabel + " " + fmtMD(axis));
+      cal.append(line, tag);
+      wireMilestoneDrag(tag, line, refTrack, () => state.model[cfg.axisField], d => { state.model[cfg.axisField] = d; });
     }
+    (cfg.commonLines || []).forEach(ml => {
+      const date = milestoneDate(view, ml); if (!date) return;
+      const x = LBL + xOf(range, date);
+      const line = el("div", { class: "sg-axisline", style: `left:${x}px;border-left-color:${ml.color}` });
+      const tag = el("div", { class: "sg-axistag", style: `left:${x}px;background:${ml.color}` }, ml.label + " " + fmtMD(date));
+      cal.append(line, tag);
+      wireMilestoneDrag(tag, line, refTrack, () => milestoneDate(view, ml), d => setMilestoneDate(view, ml, d));
+    });
     const t = todayISO(), tx = LBL + xOf(range, t);
     cal.append(el("div", { class: "sg-todayline", style: `left:${tx - 1.5}px` }));
     cal.append(el("div", { class: "sg-todaytag", style: `left:${tx}px` }, "今日"));
@@ -1471,10 +1491,11 @@
     const axisInp = el("input", { type: "date", value: state.model[cfg.axisField] || "" });
     axisInp.addEventListener("change", () => { if (!state.editing) { axisInp.value = state.model[cfg.axisField] || ""; flash("編集モードにしてから入力してください"); return; } state.model[cfg.axisField] = axisInp.value; markDirty(); renderScheduleBoard(); });
     controls.append(el("label", { class: "sg-field" }, cfg.axisLabel, axisInp));
-    const anyOpen = groups.some(g => state.schedOpen[g.name]);
-    const expBtn = el("button", { class: "btn small ghost" }, anyOpen ? "▲ すべて閉じる" : "▼ すべて開く");
-    expBtn.addEventListener("click", () => { const open = !anyOpen; groups.forEach(g => state.schedOpen[g.name] = open); renderScheduleBoard(); });
-    controls.append(expBtn);
+    (cfg.commonLines || []).forEach(ml => {
+      const mlInp = el("input", { type: "date", value: milestoneDate(view, ml) || "" });
+      mlInp.addEventListener("change", () => { if (!state.editing) { mlInp.value = milestoneDate(view, ml) || ""; flash("編集モードにしてから入力してください"); return; } setMilestoneDate(view, ml, mlInp.value); markDirty(); renderScheduleBoard(); });
+      controls.append(el("label", { class: "sg-field" }, ml.label, mlInp));
+    });
     const pastBtn = el("button", { class: "btn small ghost", title: "今日より前の日付で、まだ完了になっていない工程をまとめて完了（☑）にします" }, "☑ 今日より前を完了に");
     pastBtn.addEventListener("click", markAllPastDone);
     controls.append(pastBtn);
@@ -1502,12 +1523,14 @@
     const cal = el("div", { class: "sg-cal" });
     cal.append(scheduleHeaderEl(range, dayCount));
     const body = el("div", { class: "sg-body" });
+    let refTrack = null;
     groups.forEach(g => {
-      body.append(scheduleGroupRow(view, cfg, g, range, dayCount));
-      if (state.schedOpen[g.name]) g.children.forEach(m => body.append(scheduleChildRow(view, cfg, g, m, range, dayCount)));
+      const row = scheduleGroupRow(view, cfg, g, range, dayCount);
+      body.append(row);
+      if (!refTrack) refTrack = row.querySelector(".sg-track");
     });
     cal.append(body);
-    addOverlayLines(cal, cfg, range);
+    addOverlayLines(cal, cfg, range, view, refTrack);
     const scrollBox = el("div", { class: "sg-scroll" }, cal);
     sec.append(scrollBox);
     // 横スクロール用のスライドバー（ネイティブのスクロールバーが掴みにくいための代替操作）
@@ -1722,26 +1745,16 @@
     state.mtime = mtime; state.editing = false;
     rerender(); startPolling();
     if (sel) sel.disabled = false;
+    await enableEditing();
   }
-  // 編集モードに入る（1人だけ・ロック取得）
-  async function enterEdit() {
-    if (state.editing) return;
-    if (!S.isConnected()) { alert("共有フォルダに未接続です。右上「共有フォルダに接続」で共有フォルダを選んでください。"); return; }
-    if (!state.model) { alert("先に「対象月」で月を選ぶか、「＋新規」で作成してください。"); return; }
-    if (!state.user) { alert("先に右上のお名前を入力してください。"); return; }
-    const editBtnEl = $("#editBtn"); if (editBtnEl) editBtnEl.disabled = true;   // 確認中は連打防止＋反応した見た目に
-    // 同時に何人が接続していても編集できるようにする（ロックはブロックしない。情報表示のみ）
+  // 閲覧/編集モードは廃止。共有フォルダに接続・月を開いていて・お名前が入っていれば自動で編集可能にする
+  // （ロックは他の人が同時編集中かもという情報表示だけに使い、ブロックはしない）
+  async function enableEditing() {
+    if (state.editing || !S.isConnected() || !state.model || !state.user) return;
     const lock = await S.readLock(state.month);
     if (lock && lock.user !== state.user) flash(`${lock.user} さんも編集中の可能性があります。保存内容にご注意ください。`);
     await S.writeLock(state.month, { user: state.user, ts: Date.now() });
     state.editing = true; rerender();
-  }
-  // 閲覧モードに戻る（確定保存＋ロック解除）
-  async function exitEdit() {
-    if (!state.editing) return;
-    await doAutoSave(true);
-    await S.clearLock(state.month);
-    state.editing = false; rerender();
   }
   // ===== 自動保存（Googleスプレッドシート風：手が止まって少ししたら保存） =====
   function markDirty() { if (!state.editing) return; state.dirty = true; scheduleAutoSave(); }
@@ -1904,7 +1917,7 @@
     renderHeader();
     // 担当を手入力で確定したら候補に自動追加
     $("#board").addEventListener("change", e => { const t = e.target; if (t && t.getAttribute && t.getAttribute("data-field") === "owner") addOwner(t.value); });
-    $("#userName").addEventListener("change", e => { state.user = e.target.value.trim(); localStorage.setItem("dmplan:user", state.user); });
+    $("#userName").addEventListener("change", e => { state.user = e.target.value.trim(); localStorage.setItem("dmplan:user", state.user); enableEditing(); });
     $("#connectBtn").addEventListener("click", async () => {
       try {
         await S.connectFolder(); renderHeader(); await renderMonthSelect(); flash("共有フォルダに接続しました");
@@ -1953,8 +1966,6 @@
       st.addEventListener("keydown", e => { if (e.key === "ArrowLeft" && cf.sel > 0) { cf.sel--; positionCF(); } if (e.key === "ArrowRight" && cf.sel < cf.data.length - 1) { cf.sel++; positionCF(); } if (e.key === "Enter" && cf.data[cf.sel]) selectMonthFromCF(cf.data[cf.sel].month); if (e.key === "Escape") closeCoverflow(); });
       st.addEventListener("wheel", e => { e.preventDefault(); if (e.deltaY > 0 && cf.sel < cf.data.length - 1) { cf.sel++; positionCF(); } else if (e.deltaY < 0 && cf.sel > 0) { cf.sel--; positionCF(); } }, { passive: false });
     })();
-    $("#editBtn").addEventListener("click", enterEdit);
-    $("#viewBtn").addEventListener("click", exitEdit);
     document.querySelectorAll(".sg-tab").forEach(b => b.addEventListener("click", () => switchTab(b.dataset.tab)));
     $("#board").addEventListener("input", onInput);
     // 自動保存：フィールド編集を検知して保存予約
@@ -1997,8 +2008,6 @@
         // 別ウィンドウで開いたときに引き継いだフィルターを反映
         const filtersParam = urlParams.get("filters");
         if (filtersParam) { try { state.filters = JSON.parse(filtersParam); rerender(); } catch (e) {} }
-        // 編集モードから開いた場合は、こちらも編集モードを試みる（他の人が使用中ならブロックされる）
-        if (urlParams.get("edit") === "1" && state.user) await enterEdit();
       } else { renderBody(); renderLockBar(); }
     } else { renderBody(); renderLockBar(); }
   }
