@@ -1061,7 +1061,9 @@
   function fmtMD(iso) { const d = parseISO(iso); return d ? `${d.getMonth() + 1}/${d.getDate()}` : ""; }
 
   function schedStore() { return state.model.schedule; }
-  function stepKey(mId, view, i) { return mId + ":" + view + ":" + i; }
+  // 施策名グループ単位のキー（同じ施策名の中のRO①②・テスト等は必ず同じ日付で運用するため、
+  // 個別施策のIDではなく施策名で保存する＝グループ内で日付がバラつくことがなくなる）
+  function stepKey(m, view, i) { return (m.baseName || "").trim() + ":" + view + ":" + i; }
   // 「発送月の◯か月前・△日（土日は前倒しで直前の営業日）」形式の固定日付
   function monthsBeforeYYYYMM(yyyymm, n) {
     let y = parseInt(yyyymm.slice(0, 4), 10), mo = parseInt(yyyymm.slice(4, 6), 10);
@@ -1143,13 +1145,13 @@
     if (off === 0) return axis;   // 最終ステップ＝入稿/宛名入稿＝軸そのもの（前倒し補正の対象外）
     return prevBizDay(addDaysISO(axis, -off));
   }
-  function stepDate(view, m, i) { const ov = schedStore().overrides[stepKey(m.id, view, i)]; return ov || autoStepDate(view, m, i); }
-  function stepDone(view, m, i) { return !!schedStore().done[stepKey(m.id, view, i)]; }
-  function setStepDone(view, m, i, on) { schedStore().done[stepKey(m.id, view, i)] = on; }
+  function stepDate(view, m, i) { const ov = schedStore().overrides[stepKey(m, view, i)]; return ov || autoStepDate(view, m, i); }
+  function stepDone(view, m, i) { return !!schedStore().done[stepKey(m, view, i)]; }
+  function setStepDone(view, m, i, on) { schedStore().done[stepKey(m, view, i)] = on; }
   function setStepOverride(view, m, i, iso) {
     const auto = autoStepDate(view, m, i);
-    if (iso === auto) delete schedStore().overrides[stepKey(m.id, view, i)];
-    else schedStore().overrides[stepKey(m.id, view, i)] = iso;
+    if (iso === auto) delete schedStore().overrides[stepKey(m, view, i)];
+    else schedStore().overrides[stepKey(m, view, i)] = iso;
     setStepDone(view, m, i, false);   // 日付を動かしたら未完了に戻す
   }
   // 全施策共通の縦線（QR紐づけ完了日・KUROSHIO登録完了日など）：施策ごとではなく月に1つの日付
@@ -1168,7 +1170,7 @@
   function listGateArr() { return schedStore().listGate; }
   function kickoffObj() { return schedStore().kickoff; }
   // メモ：既定の工程は m/g のキー、追加した工程（カスタム）は "custom:<id>" をキーにする
-  function noteKeyFor(view, g, m, i) { return m ? stepKey(m.id, view, i) : `g:${g.name}:${view}:${i}`; }
+  function noteKeyFor(view, g, m, i) { return m ? stepKey(m, view, i) : `g:${g.name}:${view}:${i}`; }
   function getNote(key) { return schedStore().notes[key] || ""; }
   function setNote(key, text) { const t = (text || "").trim(); if (t) schedStore().notes[key] = t; else delete schedStore().notes[key]; }
   // カスタム工程（自分で追加した丸）：行（施策名グループ or 個別施策）ごとに何個でも追加できる
