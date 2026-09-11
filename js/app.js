@@ -1020,18 +1020,18 @@
   // 手動でドラッグして直した項目だけを model.schedule.overrides に差分保存する（他は毎回再計算＝保存しない）。
   const SCHED = {
     design: {
-      steps: ["基本情報入力／QR作成／価格表作成", "RO決定", "企画連携", "オリエン", "初校", "2校", "校了", "入稿"],
-      owners: ["CRM", "CRM", "CRM", "デザイン", "デザイン", "デザイン", "CRM", "デザイン"],
+      steps: ["RO決定", "企画連携", "オリエン", "初校", "2校", "校了", "入稿"],
+      owners: ["CRM", "CRM", "デザイン", "デザイン", "デザイン", "CRM", "デザイン"],
       // 企画連携〜入稿はデータ入稿日からの逆算日数（実データより算出。個別事情はドラッグで調整）。
-      // 基本情報入力〜RO決定は下のspecialDatesで「毎月◯日（土日は前倒し）」を優先する
-      offsets: [null, null, 52, 51, 49, 46, 38, 0],
+      // RO決定は下のspecialDatesで「毎月◯日（土日は前倒し）」を優先する
+      offsets: [null, 52, 51, 49, 46, 38, 0],
       specialDates: {
-        0: { day: 11, monthsBefore: 2 },    // 基本情報入力／QRコードURL作成／価格表作成：発送月の2か月前・11日
-        1: { day: 24, monthsBefore: 2 },    // RO決定
+        0: { day: 24, monthsBefore: 2 },    // RO決定：発送月の2か月前・24日
       },
-      gateIndex: 2,   // 企画連携チェック（鍵）の対象ステップ
+      gateIndex: 1,   // 企画連携チェック（鍵）の対象ステップ
       // 全施策共通の縦線（施策ごとの丸ではなく、データ入稿日と同じ見た目で1本だけ表示。ドラッグで日付変更可）
       commonLines: [
+        { key: "basicInfo", label: "基本情報入力", labelLines: ["基本情報入力", "QR作成", "価格表作成"], color: "#7c3aed", day: 11, monthsBefore: 2 },
         { key: "qrLink", label: "QR紐づけ完了日", color: "#c2410c", day: 18, monthsBefore: 2 },
         { key: "kuroshio", label: "KUROSHIO登録完了日", color: "#15803d", day: 20, monthsBefore: 1 },
       ],
@@ -1149,7 +1149,7 @@
     if (stepDone(view, m, i)) return "done";
     const d = stepDate(view, m, i); if (!d) return null;
     if (diffDaysISO(d, todayISO()) > 0) return "late";
-    if (view === "design" && i < 3) return "brief";
+    if (view === "design" && i < 2) return "brief";
     return "plan";
   }
   function customVisualState(c) {
@@ -1440,7 +1440,15 @@
       const date = milestoneDate(view, ml); if (!date) return;
       const x = LBL + xOf(range, date);
       const line = el("div", { class: "sg-axisline", style: `left:${x}px;border-left-color:${ml.color}` });
-      const tag = el("div", { class: "sg-axistag", style: `left:${x}px;background:${ml.color}` }, ml.label + " " + fmtMD(date));
+      const tag = el("div", { class: "sg-axistag" + (ml.labelLines ? " multi" : ""), style: `left:${x}px;background:${ml.color}` });
+      if (ml.labelLines) {
+        ml.labelLines.forEach((line2, i) => {
+          if (i > 0) tag.append(el("br", {}));
+          tag.append(document.createTextNode(i === ml.labelLines.length - 1 ? `${line2} ${fmtMD(date)}` : line2));
+        });
+      } else {
+        tag.append(document.createTextNode(`${ml.label} ${fmtMD(date)}`));
+      }
       cal.append(line, tag);
       wireMilestoneDrag(tag, line, refTrack, () => milestoneDate(view, ml), d => setMilestoneDate(view, ml, d));
     });
