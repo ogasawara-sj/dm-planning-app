@@ -1374,10 +1374,14 @@
     const owners = [...new Set(g.children.flatMap(m => (m.owner || "").split("/").filter(Boolean)))].join("/");
     const anyAI = g.children.some(m => m.listMethod === "AI"), anyKiro = g.children.some(m => m.listMethod !== "AI");
     const tag = (anyAI && anyKiro) ? el("span", { class: "sg-tag mix" }, "AI+既ロ") : el("span", { class: "sg-tag " + (anyAI ? "ai" : "kiro") }, anyAI ? "AI" : "既ロ");
+    const pri = g.children.map(m => m.priority).find(p => p != null && p !== "");
+    const nmChildren = [g.name];
+    if (view === "tci" && pri != null && pri !== "") nmChildren.push(el("span", { class: "sg-pri", title: "P3/Listの優先度" }, "優先" + pri));
+    nmChildren.push(el("span", { class: "sg-cnt" }, g.children.length + "本"));
     tr.append(el("div", { class: "sg-lbl", style: `width:${LBL}px` },
       el("span", { class: "sg-band", style: `background:${fc}` }),
       el("span", { class: "sg-nmwrap" },
-        el("span", { class: "sg-nm" }, g.name, el("span", { class: "sg-cnt" }, g.children.length + "本")),
+        el("span", { class: "sg-nm" }, ...nmChildren),
         el("span", { class: "sg-sub" }, owners + " ", tag))));
     const rowKey = rowKeyFor(g, null);
     const track = trackCellsEl(range, dayCount, view, rowKey);
