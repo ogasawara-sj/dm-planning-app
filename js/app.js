@@ -209,7 +209,7 @@
     tools.append(el("button", { class: "btn small toggle" + (state.showCode ? " on" : ""), title: state.showCode ? "素材コード を非表示" : "素材コード を表示", onclick: () => { state.showCode = !state.showCode; rerender(); } }, icon(state.showCode ? "eye" : "eye-off"), " 素材コード"));
     tools.append(el("button", { class: "btn small toggle" + (state.showLP ? " on" : ""), title: state.showLP ? "LP作成 を非表示" : "LP作成 を表示", onclick: () => { state.showLP = !state.showLP; rerender(); } }, icon(state.showLP ? "eye" : "eye-off"), " LP"));
     tools.append(el("button", { class: "btn small toggle" + (state.showTest ? " on" : ""), title: state.showTest ? "テスト検証 を非表示" : "テスト検証 を表示", onclick: () => { state.showTest = !state.showTest; rerender(); } }, icon(state.showTest ? "eye" : "eye-off"), " テスト検証"));
-    tools.append(el("button", { class: "btn small", onclick: sortByPriority, title: "AI施策を先に、P3/Listが高い順に優先度1から振る" }, "P3/Listで優先度を設定"));
+    tools.append(el("button", { class: "btn small", onclick: sortByPriority, title: "AI施策を先に、P3/Listが高い順に優先度1から振ります。押した瞬間のP3/List値で計算するため、値を全部入力し終えてから押してください（後からP3/Listを直した場合は、もう一度押すと再計算されます）" }, "P3/Listで優先度を設定"));
     tools.append(el("button", { class: "btn small ghost", title: "表示中の順に、正式名を1行1施策でコピー（案件共有シートへそのまま貼り付け可）", onclick: copyAllOfficialNames }, icon("copy"), " 正式名を一括コピー"));
     tools.append(el("button", { class: "btn small ghost", title: "表示中の順に、想定件数を1行1施策でコピー", onclick: copyAllCounts }, icon("copy"), " 件数を一括コピー"));
     tools.append(el("button", { class: "btn small ghost", title: "表示中の順に、担当を1行1施策でコピー", onclick: copyAllOwners }, icon("copy"), " 担当を一括コピー"));
@@ -417,7 +417,10 @@
   }
   function pick(m, f, opts, attrs = {}) {
     const s = el("select", Object.assign({ "data-id": m.id, "data-field": f }, attrs));
-    opts.forEach(o => { const v = o.value ?? o, l = o.label ?? o; const op = el("option", { value: v }, l); if ((m[f] ?? "") === v) op.selected = true; s.append(op); });
+    const cur = m[f] ?? "";
+    // 現在の値が選択肢に無い場合（例：旧データの「手動」等）、無言でAI/既ロ扱いにならないよう、その値のまま選べる選択肢を足す
+    if (cur !== "" && !opts.some(o => (o.value ?? o) === cur)) s.append(el("option", { value: cur }, cur + "（旧データ）"));
+    opts.forEach(o => { const v = o.value ?? o, l = o.label ?? o; const op = el("option", { value: v }, l); if (cur === v) op.selected = true; s.append(op); });
     return s;
   }
   // 施策名の候補（定番＋入力済みの実データ）
