@@ -1069,13 +1069,65 @@
     while (mo <= 0) { mo += 12; y -= 1; }
     return `${y}${String(mo).padStart(2, "0")}`;
   }
+  // ===== 日本の祝日（土日・シルバーウィーク等の祝日を挟んだ「国民の休日」も含む）を計算し、
+  // 自動計算した日付が休日に当たる場合は前倒しで直前の営業日にする =====
+  const HOLIDAY_CACHE = {};
+  function nthMondayOfMonth(year, month, n) {
+    const d = new Date(year, month - 1, 1);
+    let count = 0;
+    while (true) {
+      if (d.getDay() === 1) { count++; if (count === n) return new Date(d); }
+      d.setDate(d.getDate() + 1);
+    }
+  }
+  function equinoxDay(year, isSpring) {
+    const base = isSpring ? 20.8431 : 23.2488;
+    return Math.floor(base + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4));
+  }
+  function holidaySetForYear(year) {
+    if (HOLIDAY_CACHE[year]) return HOLIDAY_CACHE[year];
+    const set = new Set();
+    const add = (m, d) => set.add(isoOf(new Date(year, m - 1, d)));
+    add(1, 1); add(2, 11); add(2, 23); add(4, 29); add(5, 3); add(5, 4); add(5, 5);
+    add(8, 11); add(11, 3); add(11, 23);
+    set.add(isoOf(nthMondayOfMonth(year, 1, 2)));    // 成人の日
+    set.add(isoOf(nthMondayOfMonth(year, 7, 3)));    // 海の日
+    set.add(isoOf(nthMondayOfMonth(year, 9, 3)));    // 敬老の日
+    set.add(isoOf(nthMondayOfMonth(year, 10, 2)));   // スポーツの日
+    add(3, equinoxDay(year, true));    // 春分の日
+    add(9, equinoxDay(year, false));   // 秋分の日
+    // 振替休日：祝日が日曜の場合、その後の最初の非祝日の平日を休日にする
+    [...set].forEach(iso => {
+      const d = parseISO(iso);
+      if (d.getDay() === 0) {
+        const sub = new Date(d); sub.setDate(sub.getDate() + 1);
+        while (set.has(isoOf(sub))) sub.setDate(sub.getDate() + 1);
+        set.add(isoOf(sub));
+      }
+    });
+    // 国民の休日：前後を祝日に挟まれた（日曜でない）平日（例：シルバーウィークの間の日）
+    [...set].forEach(iso => {
+      const d = parseISO(iso);
+      const between = new Date(d); between.setDate(between.getDate() + 1);
+      const next = new Date(d); next.setDate(next.getDate() + 2);
+      if (set.has(isoOf(next)) && !set.has(isoOf(between)) && between.getDay() !== 0) set.add(isoOf(between));
+    });
+    HOLIDAY_CACHE[year] = set;
+    return set;
+  }
+  function isBizDay(iso) {
+    const d = parseISO(iso); if (!d) return true;
+    if (d.getDay() === 0 || d.getDay() === 6) return false;
+    return !holidaySetForYear(d.getFullYear()).has(iso);
+  }
+  function prevBizDay(iso) {
+    let cur = iso;
+    while (!isBizDay(cur)) cur = addDaysISO(cur, -1);
+    return cur;
+  }
   function bizDayOnOrBefore(yyyymm, day) {
     const y = parseInt(yyyymm.slice(0, 4), 10), mo = parseInt(yyyymm.slice(4, 6), 10);
-    const d = new Date(y, mo - 1, day);
-    const wd = d.getDay();
-    if (wd === 6) d.setDate(d.getDate() - 1);        // 土曜→金曜
-    else if (wd === 0) d.setDate(d.getDate() - 2);   // 日曜→金曜
-    return isoOf(d);
+    return prevBizDay(isoOf(new Date(y, mo - 1, day)));
   }
   function autoStepDate(view, m, i) {
     const cfg = SCHED[view];
@@ -1088,7 +1140,8 @@
     const offsets = view === "tci" ? (m.listMethod === "AI" ? cfg.offsetsAI : cfg.offsetsKiro) : cfg.offsets;
     const off = offsets[i];
     if (off == null) return "";
-    return addDaysISO(axis, -off);
+    if (off === 0) return axis;   // 最終ステップ＝入稿/宛名入稿＝軸そのもの（前倒し補正の対象外）
+    return prevBizDay(addDaysISO(axis, -off));
   }
   function stepDate(view, m, i) { const ov = schedStore().overrides[stepKey(m.id, view, i)]; return ov || autoStepDate(view, m, i); }
   function stepDone(view, m, i) { return !!schedStore().done[stepKey(m.id, view, i)]; }
@@ -1375,14 +1428,12 @@
     const anyAI = g.children.some(m => m.listMethod === "AI"), anyKiro = g.children.some(m => m.listMethod !== "AI");
     const tag = (anyAI && anyKiro) ? el("span", { class: "sg-tag mix" }, "AI+既ロ") : el("span", { class: "sg-tag " + (anyAI ? "ai" : "kiro") }, anyAI ? "AI" : "既ロ");
     const pri = g.children.map(m => m.priority).find(p => p != null && p !== "");
-    const nmChildren = [g.name];
-    if (view === "tci" && pri != null && pri !== "") nmChildren.push(el("span", { class: "sg-pri", title: "P3/Listの優先度" }, "優先" + pri));
-    nmChildren.push(el("span", { class: "sg-cnt" }, g.children.length + "本"));
-    tr.append(el("div", { class: "sg-lbl", style: `width:${LBL}px` },
-      el("span", { class: "sg-band", style: `background:${fc}` }),
+    const lblChildren = [el("span", { class: "sg-band", style: `background:${fc}` }),
       el("span", { class: "sg-nmwrap" },
-        el("span", { class: "sg-nm" }, ...nmChildren),
-        el("span", { class: "sg-sub" }, owners + " ", tag))));
+        el("span", { class: "sg-nm" }, g.name, el("span", { class: "sg-cnt" }, g.children.length + "本")),
+        el("span", { class: "sg-sub" }, owners + " ", tag))];
+    if (view === "tci" && pri != null && pri !== "") lblChildren.push(el("span", { class: "sg-pri", title: "P3/Listの優先度" }, pri));
+    tr.append(el("div", { class: "sg-lbl", style: `width:${LBL}px` }, ...lblChildren));
     const rowKey = rowKeyFor(g, null);
     const track = trackCellsEl(range, dayCount, view, rowKey);
     const lock = gateLockActive(view, g.name);
@@ -1535,7 +1586,8 @@
     sec.append(legend);
 
     const dayCount = diffDaysISO(range.from, range.to) + 1;
-    const cal = el("div", { class: "sg-cal" });
+    const hasMultiTag = (cfg.commonLines || []).some(ml => ml.labelLines);
+    const cal = el("div", { class: "sg-cal" + (hasMultiTag ? " has-multi-tags" : "") });
     cal.append(scheduleHeaderEl(range, dayCount));
     const body = el("div", { class: "sg-body" });
     let refTrack = null;
