@@ -9,7 +9,7 @@
     user: localStorage.getItem("dmplan:user") || "",
     month: null, model: null, mtime: 0, editing: false, pollTimer: null,
     sort: { field: "", dir: "asc" }, filters: {}, dragId: null, dragKey: null,
-    expanded: {}, showCode: false, showP3: false, showLP: false, showTest: false,
+    expanded: {}, showCode: false, showP3: true, showLP: false, showTest: false,
     draggingMeasure: false, dragMeasure: null,
     selected: new Set(), dragBatch: null, dragCanceled: false, dragFromSel: false, dragMoved: false,
     dropOverId: null, dropAfter: false, dragCheckOn: null,
