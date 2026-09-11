@@ -186,7 +186,7 @@ table.grid input:focus, table.grid select:focus { border-color: var(--accent); b
 
 .w-name { min-width: 168px; } .w-own { min-width: 76px; }
 .w-kind, .w-lm { min-width: 78px; font-size: 12.5px; line-height: 1.4; }
-.w-p3 { min-width: 56px; } .w-pri { min-width: 34px; } .w-cnt { min-width: 56px; }
+.w-p3 { min-width: 56px; } .w-pri { min-width: 48px; text-align: center; } .w-cnt { min-width: 56px; }
 .delivery-field { display: inline-flex; align-items: center; gap: 3px; }
 .w-souf { min-width: 40px; width: 40px; text-align: right; }
 .pct-suffix { color: var(--muted); font-size: 12px; }
