@@ -1372,7 +1372,10 @@
           if (moved) p.custom.date = addDaysISO(p.custom.date, days);
           else p.custom.done = !p.custom.done;
         } else if (moved) {
-          targets.forEach(mm => { const d = stepDate(view, mm, p.i); if (d) setStepOverride(view, mm, p.i, addDaysISO(d, days)); });
+          // 施策名グループの全施策は同じキー（施策名ベース）を共有するため、丸が実際に表示されている
+          // 位置の日付(p.mn)を基準に1回だけ計算する（施策ごとに現在値を読んで足し引きすると、
+          // 複数施策の値がまだ揃っていない時に最後に処理した施策の値で上書きされてズレる）
+          if (p.mn) setStepOverride(view, targets[0], p.i, addDaysISO(p.mn, days));
         } else if (p.st === "lock") {
           openGatePopover(view, g, dotEl); return;
         } else {
