@@ -1260,7 +1260,7 @@
       const mo = d.getMonth() + 1;
       if (mo !== curMonth) { if (monthCell) monthCell.style.width = (monthCount * CW) + "px"; monthCell = el("div", { class: "sg-mcell" }, mo + "月"); mrow.append(monthCell); curMonth = mo; monthCount = 0; }
       monthCount++;
-      const we = (d.getDay() === 0 || d.getDay() === 6);
+      const we = !isBizDay(isoOf(d));
       drow.append(el("div", { class: "sg-dcell" + (we ? " we" : ""), style: `width:${CW}px` }, String(d.getDate())));
       wrow.append(el("div", { class: "sg-wcell" + (we ? " we" : ""), style: `width:${CW}px` }, WD[d.getDay()]));
       d.setDate(d.getDate() + 1);
@@ -1275,7 +1275,7 @@
     const track = el("div", { class: "sg-track", style: `width:${dayCount * CW}px` });
     let d = parseISO(range.from);
     for (let i = 0; i < dayCount; i++) {
-      track.append(el("div", { class: "sg-tcell" + ((d.getDay() === 0 || d.getDay() === 6) ? " we" : ""), style: `width:${CW}px`, "data-date": isoOf(d) }));
+      track.append(el("div", { class: "sg-tcell" + (!isBizDay(isoOf(d)) ? " we" : ""), style: `width:${CW}px`, "data-date": isoOf(d) }));
       d.setDate(d.getDate() + 1);
     }
     if (view && rowKey) {
