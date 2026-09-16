@@ -877,9 +877,9 @@
     if (fc) { cell.style.boxShadow = "inset 6px 0 0 " + fc; cell.style.borderBottom = "2px solid " + fc; cell.style.background = lightenHex(fc, 0.85); }
     const box = el("div", { class: "detail" });
     const grid = el("div", { class: "detail-grid" });
-    // 施策概要（メモ）：普段1行、入力に応じて自動で伸びる
+    // リスト条件（メモ）：普段1行、入力に応じて自動で伸びる
     const wNote = el("div", { class: "dw-field col-note" });
-    wNote.append(el("div", { class: "dw-lab" }, "施策概要・リスト条件メモ"));
+    wNote.append(el("div", { class: "dw-lab" }, "リスト条件"));
     const ta = el("textarea", { class: "d-note", rows: "1", placeholder: "" }); ta.value = m.note || "";
     const grow = () => { ta.style.height = "auto"; ta.style.height = Math.max(30, ta.scrollHeight) + "px"; };
     ta.addEventListener("input", () => { m.note = ta.value; grow(); });
@@ -890,7 +890,10 @@
       w.append(el("div", { class: "dw-lab" }, label));
       const i = el("input", { value: m[f] || "", placeholder: opts.placeholder || "" });
       i.addEventListener("input", () => { m[f] = i.value; });
-      i.addEventListener("blur", () => rerenderRow(key, m));
+      i.addEventListener("blur", () => {
+        if (opts.dateFmt) { m[f] = normalizeDateSlashes(m[f]); i.value = m[f]; }
+        rerenderRow(key, m);
+      });
       if (opts.paste) attachFillDownPaste(i, m, (row, raw) => { row[f] = String(raw).split("\t")[0].trim(); });
       w.append(i);
       return w;
@@ -935,8 +938,13 @@
     pnTa.addEventListener("input", () => { m.printerNote = pnTa.value; pnGrow(); });
     pnTa.addEventListener("blur", () => rerenderRow(key, m));
     wPrinterNote.append(pnTa); setTimeout(pnGrow, 0);
-    // 並び：施策概要メモ → 元素材コード①② → 補足 → 掲載商品 → 特典 → FIX時期 → 仕様 → 補足_特別対応
-    grid.append(wNote, mkOrigCodes(), mkArea("補足", "supplement", "col-supp"), mk("掲載商品", "products", "col-prod"), mk("特典", "benefit", "col-benefit"), mk("FIX時期", "roFixDate", "col-fix", { placeholder: "yyyy/mm/dd", paste: true }), wSpec, wPrinterNote);
+    // 掲載商品・特典、FIX時期・仕様はそれぞれ1列に上下2段でまとめる
+    const wProdBenefit = el("div", { class: "dw-stack col-prodbenefit" });
+    wProdBenefit.append(mk("掲載商品", "products", "col-prod"), mk("特典", "benefit", "col-benefit"));
+    const wFixSpec = el("div", { class: "dw-stack col-fixspec" });
+    wFixSpec.append(mk("FIX時期", "roFixDate", "col-fix", { placeholder: "yyyy/mm/dd", paste: true, dateFmt: true }), wSpec);
+    // 並び：リスト条件 → 施策概要 → 元素材コード①② → 補足_特別対応 → 掲載商品・特典 → FIX時期・仕様
+    grid.append(wNote, mkArea("施策概要", "supplement", "col-supp"), mkOrigCodes(), wPrinterNote, wProdBenefit, wFixSpec);
     box.append(grid); cell.append(box); tr.append(cell); return tr;
   }
 
@@ -1053,6 +1061,8 @@
   const KICKOFF_ITEMS = ["施策数と優先順位の回答", "印刷会社への納品日の確認", "WOWセール購入PINの格納", "各施策の条件確認（依頼シート）"];
   const CW = 26, LBL = 250;
 
+  // 自由入力の日付文字列内の yyyy-mm-dd を yyyy/mm/dd に統一する（FIX時期など、範囲や複数日付が混在するテキストにも対応）
+  function normalizeDateSlashes(v) { return (v || "").replace(/(\d{4})-(\d{1,2})-(\d{1,2})/g, "$1/$2/$3"); }
   function isoOf(d) { const p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; }
   function parseISO(iso) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ""); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; }
   function todayISO() { return isoOf(new Date()); }

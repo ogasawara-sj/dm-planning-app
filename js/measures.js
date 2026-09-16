@@ -6,6 +6,8 @@ window.MeasuresExport = (function () {
   const thin = { style: "thin", color: { argb: "FF808080" } };
   const BORDER = { top: thin, left: thin, bottom: thin, right: thin };
   const headerFill = (col) => (col <= 2 ? BLUE : col <= 7 ? YELLOW : col <= 9 ? null : GREEN);
+  const FONT = "Meiryo UI";
+  const normalizeDate = (v) => (v || "").replace(/(\d{4})-(\d{1,2})-(\d{1,2})/g, "$1/$2/$3");
 
   function groups(rows) {
     const map = new Map(), order = [];
@@ -25,7 +27,7 @@ window.MeasuresExport = (function () {
     const headerRow = ws.addRow(HEADERS);
     headerRow.height = 28;
     headerRow.eachCell((cell, col) => {
-      cell.font = { bold: true };
+      cell.font = { name: FONT, bold: true };
       cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
       cell.border = BORDER;
       const fill = headerFill(col);
@@ -46,13 +48,14 @@ window.MeasuresExport = (function () {
           m.supplement || "",
           m.note || "",
           m.products || "",
-          m.roFixDate || "",
+          normalizeDate(m.roFixDate),
           m.benefit || "",
           m.printerNote || "",
           m.printerNote || "",
         ]);
         r.eachCell((cell, col) => {
           cell.border = BORDER;
+          cell.font = { name: FONT };
           cell.alignment = { vertical: "middle", horizontal: (col === 3 || col === 4) ? "center" : "left", wrapText: true };
         });
         if (m.highlight) r.getCell(5).fill = { type: "pattern", pattern: "solid", fgColor: { argb: HILITE } };
@@ -67,7 +70,7 @@ window.MeasuresExport = (function () {
     });
 
     const totalRow = ws.addRow(["合計施策数", totalCount, totalRO, totalTest]);
-    totalRow.eachCell((cell) => { cell.border = BORDER; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: YELLOW } }; cell.font = { bold: true }; cell.alignment = { vertical: "middle", horizontal: "center" }; });
+    totalRow.eachCell((cell) => { cell.border = BORDER; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: YELLOW } }; cell.font = { name: FONT, bold: true }; cell.alignment = { vertical: "middle", horizontal: "center" }; });
     totalRow.getCell(1).alignment = { vertical: "middle", horizontal: "left" };
     for (let c = 5; c <= HEADERS.length; c++) {
       const cell = totalRow.getCell(c);
