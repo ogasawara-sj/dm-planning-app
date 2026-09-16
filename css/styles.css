@@ -254,6 +254,7 @@ tr.detail-row > td { background: #e2e5fb; }
 table.grid .detail-row > td { background: #e2e5fb; border-bottom: 2px solid var(--accent); box-shadow: inset 3px 0 0 var(--accent); padding: 6px 18px 2px 92px; }
 .detail .d-note { width: 100%; min-height: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 12px; font-weight: 700; color: var(--ink); font-family: inherit; resize: none; overflow: hidden; background: #fff; line-height: 1.5; }
 .detail-grid { display: grid; grid-template-columns: 227px 260px 90px 260px 220px 260px 150px; gap: 14px; align-items: start; justify-content: start; }
+.dw-stack .dw-field:first-child { margin-bottom: 6px; }
 .dw-stack .dw-field:last-child { margin-bottom: 0; }
 .origcode-pair { display: flex; flex-direction: column; gap: 6px; }
 .origcode-in { font-family: "Inter", ui-monospace, monospace; }
