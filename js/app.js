@@ -1967,6 +1967,22 @@
     openModal("見積もり依頼を出力", body);
   }
 
+  // デザインチーム共有用のDM施策サマリーExcel出力（保存先フォルダは持たず、ブラウザダウンロードのみ）
+  function openMeasuresExport() {
+    if (!state.model) { alert("対象月を選んでください。"); return; }
+    const rows = state.model.active.filter(m => m.baseName && m.baseName.trim());
+    if (!rows.length) { alert("出力対象の施策がありません。"); return; }
+    window.MeasuresExport.build({ rows }).then(buf => {
+      const fname = window.MeasuresExport.filename(state.month);
+      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = el("a", { href: url, download: fname });
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      flash(`施策サマリーを出力しました（ダウンロードから開けます）：${fname}`);
+    }).catch(e => alert("出力に失敗しました：" + (e && e.message ? e.message : String(e))));
+  }
+
   function startPolling() {
     if (state.pollTimer) clearInterval(state.pollTimer);
     state.pollTimer = setInterval(async () => {
@@ -1996,6 +2012,7 @@
     $("#monthSelect").addEventListener("change", e => e.target.value && loadMonth(e.target.value));
     $("#newMonthBtn").addEventListener("click", newMonth);
     $("#estimateBtn").addEventListener("click", openEstimateModal);
+    $("#measuresBtn").addEventListener("click", openMeasuresExport);
     $("#mailDate").addEventListener("change", e => {
       if (!state.editing || !state.model) return;
       state.model.mailDate = e.target.value; markDirty();
