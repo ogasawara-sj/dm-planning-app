@@ -65,7 +65,7 @@
     return { id: uid(), baseName: "", owner: "", category: "DMB", runStatus: "未確定", codeStatus: "未確定", num: "",
       kind: "RO", variant: "", media: "発送DM", listMethod: "AI", delivery: "100", lp: "×", p3: "", priority: "",
       estimatedCount: "", products: "", benefit: "", note: "", roFixDate: "", officialName: "",
-      supplement: "", origCode1: "", origCode2: "", spec: "Z圧着", printerNote: "",
+      supplement: "", remark: "", origCode1: "", origCode2: "", spec: "Z圧着", printerNote: "",
       compareBaseId: "", compareScope: "", testValidated: false, highlight: false, cond: emptyCond(), excl: emptyExcl() };
   }
   function emptySchedule() { return { gates: {}, listGate: ["", "", "", ""], kickoff: { due: "", items: ["", "", "", ""], open: true }, overrides: {}, done: {}, notes: {}, custom: [] }; }
@@ -90,6 +90,7 @@
       if (x.highlight == null) x.highlight = false;
       if (!x.spec) x.spec = "Z圧着";
       if (x.printerNote == null) x.printerNote = "";
+      if (x.remark == null) x.remark = "";
       // 旧データ互換：送付方法(選択式)→郵便割合(%)へ移行
       if (x.delivery === "郵便のみ" || x.delivery == null || x.delivery === "") x.delivery = "100";
       else if (x.delivery === "メール便のみ") x.delivery = "0";
@@ -499,7 +500,7 @@
     });
     // 展開トグル（裏側の施策概要/特典/RO版FIX）
     const hasNote = !!((m.note && m.note.trim()) || (m.benefit && m.benefit.trim()) || (m.roFixDate && m.roFixDate.trim()) || (m.products && m.products.trim())
-      || (m.supplement && m.supplement.trim()) || (m.origCode1 && m.origCode1.trim()) || (m.origCode2 && m.origCode2.trim()) || (m.printerNote && m.printerNote.trim()));
+      || (m.supplement && m.supplement.trim()) || (m.remark && m.remark.trim()) || (m.origCode1 && m.origCode1.trim()) || (m.origCode2 && m.origCode2.trim()) || (m.printerNote && m.printerNote.trim()));
     const exp = el("button", { class: "expander" + (hasNote ? " hasnote" : "") + (state.expanded[m.id] ? " open" : ""), title: hasNote ? "詳細・メモあり（クリックで開閉）" : "詳細・メモを開く" });
     exp.append(icon(state.expanded[m.id] ? "chevron-down" : "chevron-right"));
     if (hasNote) exp.append(el("i", { class: "ti ti-note note-dot", "aria-hidden": "true" }));
@@ -932,7 +933,7 @@
     wSpec.append(specSel);
     // 補足_特別対応（見積もり依頼のH列に対応。印刷会社への申し送り事項）
     const wPrinterNote = el("div", { class: "dw-field col-printernote" });
-    wPrinterNote.append(el("div", { class: "dw-lab" }, "補足_特別対応（印刷会社への申し送り）"));
+    wPrinterNote.append(el("div", { class: "dw-lab" }, "補足_特別対応（印刷会社申し送り）"));
     const pnTa = el("textarea", { class: "d-note", rows: "1", placeholder: "" }); pnTa.value = m.printerNote || "";
     const pnGrow = () => { pnTa.style.height = "auto"; pnTa.style.height = Math.max(30, pnTa.scrollHeight) + "px"; };
     pnTa.addEventListener("input", () => { m.printerNote = pnTa.value; pnGrow(); });
@@ -943,8 +944,8 @@
     wProdBenefit.append(mk("掲載商品", "products", "col-prod"), mk("特典", "benefit", "col-benefit"));
     const wFixSpec = el("div", { class: "dw-stack col-fixspec" });
     wFixSpec.append(mk("FIX時期", "roFixDate", "col-fix", { placeholder: "yyyy/mm/dd", paste: true, dateFmt: true }), wSpec);
-    // 並び：リスト条件 → 施策概要 → 元素材コード①② → 補足_特別対応 → 掲載商品・特典 → FIX時期・仕様
-    grid.append(wNote, mkArea("施策概要", "supplement", "col-supp"), mkOrigCodes(), wPrinterNote, wProdBenefit, wFixSpec);
+    // 並び：リスト条件 → 施策概要 → 元素材コード①② → 補足 → 補足_特別対応 → 掲載商品・特典 → FIX時期・仕様
+    grid.append(wNote, mkArea("施策概要", "supplement", "col-supp"), mkOrigCodes(), mkArea("補足", "remark", "col-remark"), wPrinterNote, wProdBenefit, wFixSpec);
     box.append(grid); cell.append(box); tr.append(cell); return tr;
   }
 
