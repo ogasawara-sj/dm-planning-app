@@ -50,7 +50,7 @@ window.MeasuresExport = (function () {
           m.products || "",
           normalizeDate(m.roFixDate),
           m.benefit || "",
-          m.printerNote || "",
+          m.remark || "",
           m.printerNote || "",
         ]);
         r.eachCell((cell, col) => {
