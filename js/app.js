@@ -292,8 +292,10 @@
     activeCols().forEach(c => thr.append(headerCell(c)));
     table.append(el("thead", {}, thr));
     const tb = el("tbody", {});
-    const rows = sortView(list.filter(passFilters));
+    const { live, all: rows } = orderedRows(key);
     rows.forEach((m, i) => {
+      // 中止済みは番号を振らず最後尾へ寄せる。実施中の並びが終わる境目に少し隙間を空ける
+      if (m.cancelled && i === live.length) tb.append(el("tr", { class: "cancelled-gap-row" }, el("td", { colspan: String(activeCols().length) })));
       const bn = (m.baseName || "").trim();
       const next = rows[i + 1];
       // 同じ施策名のかたまりの最後の行に、太めのグレー線で区切りを付ける（展開中の行は行内の色帯を優先し区切り線は付けない）
@@ -478,10 +480,18 @@
     const i = rows.findIndex(x => x.id === id);
     return i > 0 ? (rows[i - 1].baseName || "").trim() : null;
   }
-  // 表示中の並び順での通し番号（並べ替え後は上から1,2,3…に自動で振り直し）
-  function rowNo(key, m) {
+  // 中止済みの施策は一覧の最後尾へ寄せ、番号は振らない（通し番号は実施中の施策だけで数える）
+  function orderedRows(key) {
     const rows = sortView(state.model[key].filter(passFilters));
-    const i = rows.findIndex(x => x.id === m.id);
+    const live = rows.filter(m => !m.cancelled);
+    const cancelled = rows.filter(m => m.cancelled);
+    return { live, cancelled, all: [...live, ...cancelled] };
+  }
+  // 表示中の並び順での通し番号（並べ替え後は上から1,2,3…に自動で振り直し。中止済みは番号なし）
+  function rowNo(key, m) {
+    if (m.cancelled) return "";
+    const { live } = orderedRows(key);
+    const i = live.findIndex(x => x.id === m.id);
     return i >= 0 ? i + 1 : "";
   }
   // 中止になった施策から、この施策(m)へリストが振り替えられている分を集める（同月内の今月実施セクションのみが対象）

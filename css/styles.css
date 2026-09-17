@@ -544,6 +544,7 @@ body.readonly .sg-todo-item input[type=checkbox] { pointer-events: none; opacity
 tr.cancelled-row .w-name input, tr.cancelled-row .w-own input { text-decoration: line-through; color: var(--faint); }
 tr.cancelled-row { background: var(--danger-soft); }
 tr.cancelled-row.stripe { background: var(--danger-soft); }
+.cancelled-gap-row td { height: 10px; padding: 0; border: none; background: var(--panel); }
 .realloc-in { display: block; font-size: 10px; color: var(--ok); font-weight: 600; margin-top: 2px; white-space: nowrap; }
 .realloc-in .ti { font-size: 11px; vertical-align: -1px; }
 .cancel-section { border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 10px; grid-column: 1 / -1; }
