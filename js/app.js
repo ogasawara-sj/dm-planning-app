@@ -202,11 +202,12 @@
     const box = $("#summary"); if (!state.model) { box.innerHTML = ""; return; }
     // 名前が入っている施策だけを集計（実施○×には依存しない）
     const a = state.model.active.filter(m => m.baseName && m.baseName.trim());
-    const ro = a.filter(m => m.kind === "RO").length, test = a.filter(m => m.kind === "テスト").length;
+    const live = a.filter(m => !m.cancelled);   // 中止した施策は施策数・RO/テスト本数の集計から除外
+    const ro = live.filter(m => m.kind === "RO").length, test = live.filter(m => m.kind === "テスト").length;
     const cnt = a.reduce((s, m) => s + (parseInt(m.estimatedCount, 10) || 0), 0);
     box.innerHTML = "";
     const chipEl = (l, v) => el("div", { class: "chip" }, el("span", { class: "chip-v" }, String(v)), el("span", { class: "chip-l" }, l));
-    box.append(chipEl("施策数（全体）", a.length), chipEl("RO本数", ro), chipEl("テスト本数", test), chipEl("想定件数 合計", cnt.toLocaleString()));
+    box.append(chipEl("施策数（全体）", live.length), chipEl("RO本数", ro), chipEl("テスト本数", test), chipEl("想定件数 合計", cnt.toLocaleString()));
     box.append(el("div", { class: "sum-spacer" }));
     // 今月実施セクションの操作（見出しを廃止したのでここに集約）
     const tools = el("div", { class: "sum-tools" });
@@ -556,9 +557,10 @@
     cntCell.append(numField(m, "estimatedCount", false, "w-cnt"));
     const inflow = incomingReallocations(m);
     if (inflow.length) {
+      // 件数は振替先の想定件数にすでに合算済み。ここでは「その内訳」を示すだけ
       const label = inflow.map(x => `${x.from.baseName || "(無題)"} +${(parseInt(x.count, 10) || 0).toLocaleString()}`).join("・");
-      cntCell.append(el("span", { class: "realloc-in", title: "中止になった施策からの振替分" },
-        icon("corner-left-up"), " " + label));
+      cntCell.append(el("span", { class: "realloc-in", title: "中止になった施策から振り替えられた分（すでに合算済み）" },
+        icon("corner-left-up"), " " + label + " を含む"));
     }
     tr.append(cntCell);
     if (state.showCode) { const codeCell = el("td", { class: "c-code", "data-code": m.id }); renderCodeCell(codeCell, m); tr.append(codeCell); }
@@ -973,7 +975,14 @@
     box.append(cancelSection(key, m));
     cell.append(box); tr.append(cell); return tr;
   }
+  // 振替先の想定件数へ差分(delta)を加算/減算する（負の値で取り消し）。0未満にはしない
+  function creditReallocation(destId, delta) {
+    if (!destId || !delta) return;
+    const dest = findMeasure(destId);
+    if (dest) dest.estimatedCount = String(Math.max(0, (parseInt(dest.estimatedCount, 10) || 0) + delta));
+  }
   // 施策の中止・リスト振替（成績不振等で中止し、確保していたリストを同月の別施策へ振り替える運用の記録）
+  // 中止にした瞬間に件数は0になり、元の件数はそのまま振替先へ移す（部分的な移動は想定しないため、件数入力は無し＝振替先を選ぶだけ）
   function cancelSection(key, m) {
     const wrap = el("div", { class: "cancel-section" + (m.cancelled ? " on" : "") });
     const head = el("div", { class: "cancel-head" });
@@ -981,9 +990,16 @@
       icon(m.cancelled ? "toggle-right" : "toggle-left"), " この施策を中止する");
     toggleBtn.addEventListener("click", () => {
       if (!state.editing) { blockEdit(); return; }
-      m.cancelled = !m.cancelled;
-      if (m.cancelled && !m.cancelDate) m.cancelDate = todayISO();
-      if (!m.cancelled) { m.reallocateToId = ""; m.reallocateCount = ""; }
+      if (!m.cancelled) {
+        m.cancelled = true;
+        if (!m.cancelDate) m.cancelDate = todayISO();
+        m.reallocateCount = String(parseInt(m.estimatedCount, 10) || 0);
+        m.estimatedCount = "0";
+      } else {
+        creditReallocation(m.reallocateToId, -(parseInt(m.reallocateCount, 10) || 0));
+        m.estimatedCount = m.reallocateCount || m.estimatedCount;
+        m.cancelled = false; m.reallocateToId = ""; m.reallocateCount = "";
+      }
       markDirty(); rerender();
     });
     head.append(toggleBtn);
@@ -1005,7 +1021,7 @@
     reasonTa.addEventListener("input", () => { m.cancelReason = reasonTa.value; reasonGrow(); });
     reasonTa.addEventListener("blur", () => rerenderRow(key, m));
     wReason.append(reasonTa); setTimeout(reasonGrow, 0);
-    // 振替先（同月・今月実施の他施策から1つ選ぶ）
+    // 振替先（同月・今月実施の他施策から1つ選ぶ。選ぶだけで、確保していた件数がそのまま丸ごと移る）
     const wDest = el("div", { class: "dw-field col-cancelto" });
     wDest.append(el("div", { class: "dw-lab" }, "振替先（同月の施策）"));
     const destSel = el("select", {});
@@ -1016,23 +1032,23 @@
       if (m.reallocateToId === x.id) op.selected = true;
       destSel.append(op);
     });
-    destSel.addEventListener("change", () => { if (!state.editing) { destSel.value = m.reallocateToId || ""; blockEdit(); return; } m.reallocateToId = destSel.value; markDirty(); rerender(); });
+    destSel.addEventListener("change", () => {
+      if (!state.editing) { destSel.value = m.reallocateToId || ""; blockEdit(); return; }
+      const amt = parseInt(m.reallocateCount, 10) || 0;
+      creditReallocation(m.reallocateToId, -amt);
+      m.reallocateToId = destSel.value;
+      creditReallocation(m.reallocateToId, amt);
+      markDirty(); rerender();
+    });
     wDest.append(destSel);
-    // 移動件数
-    const wCnt = el("div", { class: "dw-field col-cancelcnt" });
-    wCnt.append(el("div", { class: "dw-lab" }, "移動件数"));
-    const cntInp = el("input", { value: m.reallocateCount || "", placeholder: "件数" });
-    cntInp.addEventListener("input", () => { m.reallocateCount = cntInp.value.replace(/[^0-9]/g, ""); });
-    cntInp.addEventListener("blur", () => { cntInp.value = m.reallocateCount || ""; rerender(); });
-    wCnt.append(cntInp);
-    grid2.append(wDate, wReason, wDest, wCnt);
+    grid2.append(wDate, wReason, wDest);
     wrap.append(grid2);
     const dest = m.reallocateToId ? findMeasure(m.reallocateToId) : null;
-    if (dest && (parseInt(m.reallocateCount, 10) || 0) > 0) {
+    if (dest) {
       wrap.append(el("div", { class: "cancel-flow" },
-        el("span", { class: "cancel-chip from" }, m.baseName || "(無題)"),
+        el("span", { class: "cancel-chip from" }, `${m.baseName || "(無題)"}（中止・${(parseInt(m.reallocateCount, 10) || 0).toLocaleString()}件）`),
         icon("arrow-right"),
-        el("span", { class: "cancel-chip to" }, `${dest.baseName || "(無題)"} ＋${(parseInt(m.reallocateCount, 10) || 0).toLocaleString()}件`)));
+        el("span", { class: "cancel-chip to" }, `${dest.baseName || "(無題)"} に合算済み`)));
     }
     return wrap;
   }
@@ -1103,8 +1119,8 @@
     if (!state.model) { root.append(el("div", { class: "placeholder" }, "「対象月」で月を選ぶか、「＋ 新規月」で作成してください。")); return; }
     computeFamilyColors();
     root.append(renderMeasureSection("active", "今月実施（施策）", "calendar-check"));
-    root.append(renderMeasureSection("carryNext", "アイデア欄", "bulb"));
     root.append(renderCancelLog());
+    root.append(renderMeasureSection("carryNext", "アイデア欄", "bulb"));
   }
   // 中止・振替ログ：中止になった施策と、そのリストの振替先・件数・理由を後からまとめて追える記録
   function renderCancelLog() {
@@ -1120,11 +1136,11 @@
         el("span", { class: "cancel-log-name" }, m.baseName || "(無題)"),
         el("span", { class: "cancel-log-date" }, [m.cancelDate, m.owner].filter(Boolean).join("・"))));
       if (m.cancelReason) card.append(el("div", { class: "cancel-log-reason" }, m.cancelReason));
-      if (dest && (parseInt(m.reallocateCount, 10) || 0) > 0) {
+      if (dest) {
         card.append(el("div", { class: "cancel-flow" },
-          el("span", { class: "cancel-chip from" }, `${m.baseName || "(無題)"}（中止・${(parseInt(m.estimatedCount, 10) || 0).toLocaleString()}件）`),
+          el("span", { class: "cancel-chip from" }, `${m.baseName || "(無題)"}（中止・${(parseInt(m.reallocateCount, 10) || 0).toLocaleString()}件）`),
           icon("arrow-right"),
-          el("span", { class: "cancel-chip to" }, `${dest.baseName || "(無題)"} ＋${(parseInt(m.reallocateCount, 10) || 0).toLocaleString()}件`)));
+          el("span", { class: "cancel-chip to" }, `${dest.baseName || "(無題)"} に合算済み`)));
       }
       wrap.append(card);
     });
