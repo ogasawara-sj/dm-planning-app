@@ -66,7 +66,8 @@
       kind: "RO", variant: "", media: "発送DM", listMethod: "AI", delivery: "100", lp: "×", p3: "", priority: "",
       estimatedCount: "", products: "", benefit: "", note: "", roFixDate: "", officialName: "",
       supplement: "", remark: "", origCode1: "", origCode2: "", spec: "Z圧着", printerNote: "",
-      compareBaseId: "", compareScope: "", testValidated: false, highlight: false, cond: emptyCond(), excl: emptyExcl() };
+      compareBaseId: "", compareScope: "", testValidated: false, highlight: false, cond: emptyCond(), excl: emptyExcl(),
+      cancelled: false, cancelDate: "", cancelReason: "", reallocateToId: "", reallocateCount: "" };
   }
   function emptySchedule() { return { gates: {}, listGate: ["", "", "", ""], kickoff: { due: "", items: ["", "", "", ""], open: true }, overrides: {}, done: {}, notes: {}, custom: [] }; }
   function emptyModel(month) {
@@ -91,6 +92,11 @@
       if (!x.spec) x.spec = "Z圧着";
       if (x.printerNote == null) x.printerNote = "";
       if (x.remark == null) x.remark = "";
+      if (x.cancelled == null) x.cancelled = false;
+      if (x.cancelDate == null) x.cancelDate = "";
+      if (x.cancelReason == null) x.cancelReason = "";
+      if (x.reallocateToId == null) x.reallocateToId = "";
+      if (x.reallocateCount == null) x.reallocateCount = "";
       // 旧データ互換：送付方法(選択式)→郵便割合(%)へ移行
       if (x.delivery === "郵便のみ" || x.delivery == null || x.delivery === "") x.delivery = "100";
       else if (x.delivery === "メール便のみ") x.delivery = "0";
@@ -466,11 +472,17 @@
     const i = rows.findIndex(x => x.id === m.id);
     return i >= 0 ? i + 1 : "";
   }
+  // 中止になった施策から、この施策(m)へリストが振り替えられている分を集める（同月内の今月実施セクションのみが対象）
+  function incomingReallocations(m) {
+    return state.model.active.filter(x => x.cancelled && x.reallocateToId === m.id && (parseInt(x.reallocateCount, 10) || 0) > 0)
+      .map(x => ({ from: x, count: x.reallocateCount }));
+  }
   function row(key, m) {
     const tr = el("tr", { "data-row": m.id });
     if (state.expanded[m.id]) tr.classList.add("expanded-row");
     if (state.selected.has(m.id)) tr.classList.add("selected");
     if (m.highlight) tr.classList.add("highlighted");
+    if (m.cancelled) tr.classList.add("cancelled-row");
     const fc = familyColorOf(m);
     if (fc) { tr.classList.add("fam-row"); tr.style.setProperty("--band", fc); }
     if (prevBaseIn(key, m.id) === (m.baseName || "").trim() && (m.baseName || "").trim()) tr.classList.add("name-repeat");
@@ -500,7 +512,7 @@
     });
     // 展開トグル（裏側の施策概要/特典/RO版FIX）
     const hasNote = !!((m.note && m.note.trim()) || (m.benefit && m.benefit.trim()) || (m.roFixDate && m.roFixDate.trim()) || (m.products && m.products.trim())
-      || (m.supplement && m.supplement.trim()) || (m.remark && m.remark.trim()) || (m.origCode1 && m.origCode1.trim()) || (m.origCode2 && m.origCode2.trim()) || (m.printerNote && m.printerNote.trim()));
+      || (m.supplement && m.supplement.trim()) || (m.remark && m.remark.trim()) || (m.origCode1 && m.origCode1.trim()) || (m.origCode2 && m.origCode2.trim()) || (m.printerNote && m.printerNote.trim()) || m.cancelled);
     const exp = el("button", { class: "expander" + (hasNote ? " hasnote" : "") + (state.expanded[m.id] ? " open" : ""), title: hasNote ? "詳細・メモあり（クリックで開閉）" : "詳細・メモを開く" });
     exp.append(icon(state.expanded[m.id] ? "chevron-down" : "chevron-right"));
     if (hasNote) exp.append(el("i", { class: "ti ti-note note-dot", "aria-hidden": "true" }));
@@ -528,7 +540,10 @@
     dragCell.append(handle, exp);
     tr.append(el("td", { class: "c-no" }, String(rno)));
     tr.append(dragCell);
-    tr.append(td(comboField(m, "baseName", baseSuggestions, { class: "w-name", placeholder: "施策名" })));
+    const nameCell = el("td", {});
+    nameCell.append(comboField(m, "baseName", baseSuggestions, { class: "w-name", placeholder: "施策名" }));
+    if (m.cancelled) nameCell.append(el("span", { class: "cancel-badge", title: m.cancelReason || "" }, "中止"));
+    tr.append(nameCell);
     tr.append(td(comboField(m, "owner", getOwners, { class: "w-own", placeholder: "担当" })));
     tr.append(td(pick(m, "kind", M.kinds, { class: "w-kind" })));
     tr.append(td(pick(m, "listMethod", M.listMethods, { class: "w-lm" })));
@@ -537,7 +552,15 @@
       tr.append(td(numField(m, "p3", true, "w-p3")));
       tr.append(td(field(m, "priority", { class: "w-pri", type: "number", min: "1", placeholder: "—" })));
     }
-    tr.append(td(numField(m, "estimatedCount", false, "w-cnt")));
+    const cntCell = el("td", {});
+    cntCell.append(numField(m, "estimatedCount", false, "w-cnt"));
+    const inflow = incomingReallocations(m);
+    if (inflow.length) {
+      const label = inflow.map(x => `${x.from.baseName || "(無題)"} +${(parseInt(x.count, 10) || 0).toLocaleString()}`).join("・");
+      cntCell.append(el("span", { class: "realloc-in", title: "中止になった施策からの振替分" },
+        icon("corner-left-up"), " " + label));
+    }
+    tr.append(cntCell);
     if (state.showCode) { const codeCell = el("td", { class: "c-code", "data-code": m.id }); renderCodeCell(codeCell, m); tr.append(codeCell); }
     // 正式名候補：編集可＋コピー
     const der = el("td", { class: "c-derived", "data-derived": m.id });
@@ -946,7 +969,72 @@
     wFixSpec.append(mk("FIX時期", "roFixDate", "col-fix", { placeholder: "yyyy/mm/dd", paste: true, dateFmt: true }), wSpec);
     // 並び：リスト条件 → 施策概要 → 元素材コード①② → 補足 → 補足_特別対応 → 掲載商品・特典 → FIX時期・仕様
     grid.append(wNote, mkArea("施策概要", "supplement", "col-supp"), mkOrigCodes(), mkArea("補足", "remark", "col-remark"), wPrinterNote, wProdBenefit, wFixSpec);
-    box.append(grid); cell.append(box); tr.append(cell); return tr;
+    box.append(grid);
+    box.append(cancelSection(key, m));
+    cell.append(box); tr.append(cell); return tr;
+  }
+  // 施策の中止・リスト振替（成績不振等で中止し、確保していたリストを同月の別施策へ振り替える運用の記録）
+  function cancelSection(key, m) {
+    const wrap = el("div", { class: "cancel-section" + (m.cancelled ? " on" : "") });
+    const head = el("div", { class: "cancel-head" });
+    const toggleBtn = el("button", { class: "cancel-toggle" + (m.cancelled ? " on" : "") },
+      icon(m.cancelled ? "toggle-right" : "toggle-left"), " この施策を中止する");
+    toggleBtn.addEventListener("click", () => {
+      if (!state.editing) { blockEdit(); return; }
+      m.cancelled = !m.cancelled;
+      if (m.cancelled && !m.cancelDate) m.cancelDate = todayISO();
+      if (!m.cancelled) { m.reallocateToId = ""; m.reallocateCount = ""; }
+      markDirty(); rerender();
+    });
+    head.append(toggleBtn);
+    wrap.append(head);
+    if (!m.cancelled) return wrap;
+    const grid2 = el("div", { class: "cancel-grid" });
+    // 中止日
+    const wDate = el("div", { class: "dw-field col-canceldate" });
+    wDate.append(el("div", { class: "dw-lab" }, "中止日"));
+    const dateInp = el("input", { type: "date", value: m.cancelDate || "" });
+    dateInp.addEventListener("change", () => { if (!state.editing) { dateInp.value = m.cancelDate || ""; blockEdit(); return; } m.cancelDate = dateInp.value; markDirty(); });
+    wDate.append(dateInp);
+    // 中止理由（自由記述）
+    const wReason = el("div", { class: "dw-field col-cancelreason" });
+    wReason.append(el("div", { class: "dw-lab" }, "中止理由"));
+    const reasonTa = el("textarea", { class: "d-note", rows: "1", placeholder: "例：成績不振（開封率が目標の半分以下）のため中止" });
+    reasonTa.value = m.cancelReason || "";
+    const reasonGrow = () => { reasonTa.style.height = "auto"; reasonTa.style.height = Math.max(30, reasonTa.scrollHeight) + "px"; };
+    reasonTa.addEventListener("input", () => { m.cancelReason = reasonTa.value; reasonGrow(); });
+    reasonTa.addEventListener("blur", () => rerenderRow(key, m));
+    wReason.append(reasonTa); setTimeout(reasonGrow, 0);
+    // 振替先（同月・今月実施の他施策から1つ選ぶ）
+    const wDest = el("div", { class: "dw-field col-cancelto" });
+    wDest.append(el("div", { class: "dw-lab" }, "振替先（同月の施策）"));
+    const destSel = el("select", {});
+    destSel.append(el("option", { value: "" }, "選択してください"));
+    state.model.active.filter(x => x.id !== m.id && (x.baseName || "").trim()).forEach(x => {
+      const label = `${x.baseName}（${x.kind}${x.num ? " " + x.num : ""}）`;
+      const op = el("option", { value: x.id }, label);
+      if (m.reallocateToId === x.id) op.selected = true;
+      destSel.append(op);
+    });
+    destSel.addEventListener("change", () => { if (!state.editing) { destSel.value = m.reallocateToId || ""; blockEdit(); return; } m.reallocateToId = destSel.value; markDirty(); rerender(); });
+    wDest.append(destSel);
+    // 移動件数
+    const wCnt = el("div", { class: "dw-field col-cancelcnt" });
+    wCnt.append(el("div", { class: "dw-lab" }, "移動件数"));
+    const cntInp = el("input", { value: m.reallocateCount || "", placeholder: "件数" });
+    cntInp.addEventListener("input", () => { m.reallocateCount = cntInp.value.replace(/[^0-9]/g, ""); });
+    cntInp.addEventListener("blur", () => { cntInp.value = m.reallocateCount || ""; rerender(); });
+    wCnt.append(cntInp);
+    grid2.append(wDate, wReason, wDest, wCnt);
+    wrap.append(grid2);
+    const dest = m.reallocateToId ? findMeasure(m.reallocateToId) : null;
+    if (dest && (parseInt(m.reallocateCount, 10) || 0) > 0) {
+      wrap.append(el("div", { class: "cancel-flow" },
+        el("span", { class: "cancel-chip from" }, m.baseName || "(無題)"),
+        icon("arrow-right"),
+        el("span", { class: "cancel-chip to" }, `${dest.baseName || "(無題)"} ＋${(parseInt(m.reallocateCount, 10) || 0).toLocaleString()}件`)));
+    }
+    return wrap;
   }
 
   // ===== 施策名ごとの色分け（赤=お誕生日系 / 青=TRS系 / 緑=RAH系。主要は固定・派生は少しずらす） =====
@@ -1016,6 +1104,31 @@
     computeFamilyColors();
     root.append(renderMeasureSection("active", "今月実施（施策）", "calendar-check"));
     root.append(renderMeasureSection("carryNext", "アイデア欄", "bulb"));
+    root.append(renderCancelLog());
+  }
+  // 中止・振替ログ：中止になった施策と、そのリストの振替先・件数・理由を後からまとめて追える記録
+  function renderCancelLog() {
+    const wrap = el("section", { class: "sec cancel-log" });
+    const cancelled = state.model.active.filter(m => m.cancelled)
+      .sort((a, b) => (b.cancelDate || "").localeCompare(a.cancelDate || ""));
+    wrap.append(el("div", { class: "sec-head" }, el("h2", {}, icon("ban"), " 中止・振替ログ", el("span", { class: "sec-count" }, String(cancelled.length)))));
+    if (!cancelled.length) { wrap.append(el("div", { class: "cancel-log-empty" }, "中止した施策はありません。")); return wrap; }
+    cancelled.forEach(m => {
+      const dest = m.reallocateToId ? findMeasure(m.reallocateToId) : null;
+      const card = el("div", { class: "cancel-log-card" });
+      card.append(el("div", { class: "cancel-log-top" },
+        el("span", { class: "cancel-log-name" }, m.baseName || "(無題)"),
+        el("span", { class: "cancel-log-date" }, [m.cancelDate, m.owner].filter(Boolean).join("・"))));
+      if (m.cancelReason) card.append(el("div", { class: "cancel-log-reason" }, m.cancelReason));
+      if (dest && (parseInt(m.reallocateCount, 10) || 0) > 0) {
+        card.append(el("div", { class: "cancel-flow" },
+          el("span", { class: "cancel-chip from" }, `${m.baseName || "(無題)"}（中止・${(parseInt(m.estimatedCount, 10) || 0).toLocaleString()}件）`),
+          icon("arrow-right"),
+          el("span", { class: "cancel-chip to" }, `${dest.baseName || "(無題)"} ＋${(parseInt(m.reallocateCount, 10) || 0).toLocaleString()}件`)));
+      }
+      wrap.append(card);
+    });
+    return wrap;
   }
   function rerender() {
     renderSummary(); renderLockBar(); updateSavedAt(); updateTitle(); updateSelBar(); updateMailDate(); renderKickoffCard();
