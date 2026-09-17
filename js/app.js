@@ -1228,7 +1228,7 @@
   }
   // 表示中のスケジュールタブで「今日より前・未完了（＝late表示）」の工程をまとめて完了にする
   function markAllPastDone() {
-    if (!state.editing) { flash("編集モードにしてから操作してください"); return; }
+    if (!state.editing) { blockEdit(); return; }
     const view = state.tab; const cfg = SCHED[view];
     if (!cfg) return;
     let n = 0;
@@ -1292,7 +1292,7 @@
     if (view && rowKey) {
       track.addEventListener("contextmenu", e => {
         e.preventDefault();
-        if (!state.editing) { flash("編集モードにしてから操作してください"); return; }
+        if (!state.editing) { blockEdit(); return; }
         const date = dateAtPoint(track, e);
         openCtxMenu([{ label: `＋ ${fmtMD(date)} に工程を追加`, onClick: () => openAddCustomModal(view, rowKey, date) }], e.clientX, e.clientY);
       });
@@ -1357,7 +1357,7 @@
     const key = p.custom ? ("custom:" + p.custom.id) : noteKeyFor(view, g, m, p.i);
     dotEl.addEventListener("contextmenu", e => {
       e.preventDefault(); e.stopPropagation();
-      if (!state.editing) { flash("編集モードにしてから操作してください"); return; }
+      if (!state.editing) { blockEdit(); return; }
       const items = [{ label: getNote(key) ? "📝 メモを編集" : "📝 メモを追加", onClick: () => openMemoModal(key, p.label) }];
       if (p.custom) items.push({ label: "🗑 このマークを削除", onClick: () => { removeCustom(p.custom.id); markDirty(); renderScheduleBoard(); } });
       openCtxMenu(items, e.clientX, e.clientY);
@@ -1571,11 +1571,11 @@
 
     const controls = el("div", { class: "sg-controls" });
     const axisInp = el("input", { type: "date", value: state.model[cfg.axisField] || "" });
-    axisInp.addEventListener("change", () => { if (!state.editing) { axisInp.value = state.model[cfg.axisField] || ""; flash("編集モードにしてから入力してください"); return; } state.model[cfg.axisField] = axisInp.value; markDirty(); renderScheduleBoard(); });
+    axisInp.addEventListener("change", () => { if (!state.editing) { axisInp.value = state.model[cfg.axisField] || ""; blockEdit(); return; } state.model[cfg.axisField] = axisInp.value; markDirty(); renderScheduleBoard(); });
     controls.append(el("label", { class: "sg-field" }, cfg.axisLabel, axisInp));
     (cfg.commonLines || []).forEach(ml => {
       const mlInp = el("input", { type: "date", value: milestoneDate(view, ml) || "" });
-      mlInp.addEventListener("change", () => { if (!state.editing) { mlInp.value = milestoneDate(view, ml) || ""; flash("編集モードにしてから入力してください"); return; } setMilestoneDate(view, ml, mlInp.value); markDirty(); renderScheduleBoard(); });
+      mlInp.addEventListener("change", () => { if (!state.editing) { mlInp.value = milestoneDate(view, ml) || ""; blockEdit(); return; } setMilestoneDate(view, ml, mlInp.value); markDirty(); renderScheduleBoard(); });
       controls.append(el("label", { class: "sg-field" }, ml.label, mlInp));
     });
     const pastBtn = el("button", { class: "btn small ghost", title: "今日より前の日付で、まだ完了になっていない工程をまとめて完了（☑）にします" }, "☑ 今日より前を完了に");
@@ -1663,7 +1663,7 @@
     return items;
   }
   function completeTodoItem(item) {
-    if (!state.editing) { flash("編集モードにしてから操作してください"); return; }
+    if (!state.editing) { blockEdit(); return; }
     if (item.custom) item.custom.done = true;
     else item.group.children.forEach(m => { if (stepDate(item.view, m, item.stepIndex)) setStepDone(item.view, m, item.stepIndex, true); });
     markDirty(); renderScheduleBoard();
@@ -1703,7 +1703,7 @@
     const head = el("div", { class: "sg-kickoff-h" }, chev, icon("mail"), el("span", { class: "sg-kickoff-t" }, "栗田さん（TCI）からの月次キックオフ依頼"));
     if (k.open) {
       const dueInp = el("input", { type: "date", value: k.due || "" });
-      dueInp.addEventListener("change", () => { if (!state.editing) { dueInp.value = k.due || ""; flash("編集モードにしてから入力してください"); return; } k.due = dueInp.value; markDirty(); renderKickoffCard(); });
+      dueInp.addEventListener("change", () => { if (!state.editing) { dueInp.value = k.due || ""; blockEdit(); return; } k.due = dueInp.value; markDirty(); renderKickoffCard(); });
       head.append(el("span", { class: "sg-kickoff-who" }, "回答期限 ", dueInp));
     }
     head.append(el("span", { class: "sg-spacer" }), badge);
@@ -1716,7 +1716,7 @@
           const on = k.items[idx] === val;
           const b = el("button", { class: "sg-kickoff-b" + (on ? " on" : "") }, label);
           b.addEventListener("click", () => {
-            if (!state.editing) { flash("編集モードにしてから操作してください"); return; }
+            if (!state.editing) { blockEdit(); return; }
             k.items[idx] = (k.items[idx] === val) ? "" : val;
             if (idx === 0) listGateArr()[0] = k.items[0];
             markDirty(); renderKickoffCard(); if (state.tab === "tci") renderScheduleBoard();
@@ -1742,7 +1742,7 @@
   function move(key, id, d) { if (!state.editing) return; const l = state.model[key]; const i = l.findIndex(x=>x.id===id), j=i+d; if(i<0||j<0||j>=l.length)return; [l[i],l[j]]=[l[j],l[i]]; markDirty(); rerender(); }
   function del(key, id) { if (!state.editing) return; const l = state.model[key]; const i = l.findIndex(x=>x.id===id); if(i>=0){l.splice(i,1);state.selected.delete(id);markDirty();rerender();} }
   function sortByPriority() {
-    if (!state.editing) { alert("編集モードにしてから実行してください。"); return; }
+    if (!state.editing) { blockEdit(); return; }
     // 施策名グループの先頭行（太字の行）だけを対象にする。2行目以降は優先度を出さない
     let prevBase = null;
     const tops = [];
@@ -2007,6 +2007,19 @@
     }, 5000);
   }
   let ft; function flash(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(ft); ft=setTimeout(()=>t.classList.remove("show"),2000); }
+  // 編集不可の操作をブロックした時の案内。原因が「お名前未入力」なら、そこを直接示して迷わないようにする
+  // （名前が空のままだとenableEditing()が編集可能化を一切行わないため、単に「編集モードにしてください」だけでは
+  // 何をすればいいか伝わらず、詰まって動けなくなっているように見えるという報告があった）
+  function blockEdit() {
+    if (state.editing) return;
+    if (!state.user) {
+      flash("画面右上の「お名前」を入力すると編集できます");
+      const u = $("#userName");
+      if (u) { u.focus(); u.classList.add("nudge"); setTimeout(() => u.classList.remove("nudge"), 1500); }
+    } else {
+      flash("編集モードにしてから操作してください");
+    }
+  }
 
   async function init() {
     dl("dl-own", getOwners());
