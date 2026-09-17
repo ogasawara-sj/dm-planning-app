@@ -1832,7 +1832,10 @@
     if (state.editing || !S.isConnected() || !state.model || !state.user) return;
     const lock = await S.readLock(state.month);
     if (lock && lock.user !== state.user) flash(`${lock.user} さんも編集中の可能性があります。保存内容にご注意ください。`);
-    await S.writeLock(state.month, { user: state.user, ts: Date.now() });
+    // ロックは情報表示のみが目的で、書き込みの成否は編集可否に影響させない。
+    // 同時接続が多いと共有フォルダ上の同じlock.jsonへの書き込みが競合して失敗することがあり、
+    // ここでawaitに失敗すると以降のstate.editing=trueが実行されず「編集できない」状態が固定化してしまうため必ず捕捉する。
+    try { await S.writeLock(state.month, { user: state.user, ts: Date.now() }); } catch (e) {}
     state.editing = true; rerender();
   }
   // ===== 自動保存（Googleスプレッドシート風：手が止まって少ししたら保存） =====
