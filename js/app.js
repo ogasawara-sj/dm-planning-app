@@ -103,6 +103,17 @@
       else if (x.delivery === "郵便+メール便") x.delivery = "90";
       if (!x.lp) x.lp = "×";
     }));
+    // 旧仕様（件数の手入力・自動0化/合算なし）で保存された中止済みデータの自己修復：
+    // 中止済みなのに想定件数がまだ0になっていない場合、振替先へ実際に加算してから0にする（初回のみ・以後は0のためスキップされる）
+    (m.active || []).forEach(x => {
+      const amt = parseInt(x.estimatedCount, 10) || 0;
+      if (x.cancelled && x.reallocateToId && amt > 0) {
+        const dest = (m.active || []).find(d => d.id === x.reallocateToId);
+        if (dest) dest.estimatedCount = String((parseInt(dest.estimatedCount, 10) || 0) + amt);
+        x.reallocateCount = String(amt);
+        x.estimatedCount = "0";
+      }
+    });
     if (!m.ideas) m.ideas = [];
     if (m.mailDate == null) m.mailDate = "";
     if (m.designAxis == null) m.designAxis = "";
@@ -987,7 +998,7 @@
     const wrap = el("div", { class: "cancel-section" + (m.cancelled ? " on" : "") });
     const head = el("div", { class: "cancel-head" });
     const toggleBtn = el("button", { class: "cancel-toggle" + (m.cancelled ? " on" : "") },
-      icon(m.cancelled ? "toggle-right" : "toggle-left"), " この施策を中止する");
+      icon(m.cancelled ? "toggle-right" : "toggle-left"), m.cancelled ? " 中止済み" : " この施策を中止する");
     toggleBtn.addEventListener("click", () => {
       if (!state.editing) { blockEdit(); return; }
       if (!m.cancelled) {
