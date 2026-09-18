@@ -18,9 +18,10 @@
     tab: "list", schedOpen: {},
     crossMonth: {},   // 施策名フィルター中に表示する過去月の比較データ（{month: {model,dirty,saving,timer}|null}）
     crossExpanded: {},   // 過去月比較の展開状態（キー："month:id"）
+    baseline: null,   // 読み込み・直前の保存成功時点のスナップショット（保存時の3-way mergeの基準）
   };
   const cf = { data: [], cards: [], dots: [], sel: 0, dragMode: false, opening: false };
-  let saving = false, autoTimer = null;   // 自動保存の状態
+  let saving = false, autoTimer = null, retryTimer = null;   // 自動保存の状態
   const uid = () => "m" + Math.random().toString(36).slice(2, 9);
 
   // 担当候補（この端末に保存。手入力で追加、×で削除）
@@ -78,6 +79,64 @@
     return { month, title: window.monthLabel(month) + "DM施策", updatedAt: "", updatedBy: "", mailDate: "",
       designAxis: "", tciAxis: "", schedule: emptySchedule(),
       active, carryNext: [], carryFuture: [], ideas: [] };
+  }
+  // ===== 保存時の3-way merge（同時アクセスが多くても、違う場所の編集同士なら潰し合わないようにする） =====
+  // baseline＝自分が読み込んだ（前回保存に成功した）時点、local＝今の自分の編集内容、disk＝保存直前に読み直した共有フォルダの最新内容。
+  // 「自分がbaselineから変更した部分はローカル優先、変更していない部分は最新のdisk側を採用」という方針で、
+  // 別の人が別の場所を編集していれば両方の変更が残るようにする（同じ場所を両方が編集した場合は、後から保存した方が勝つ＝仕様として許容）。
+  function mergeArrayById(baseline, local, disk) {
+    const bMap = new Map((baseline || []).map(x => [x.id, x]));
+    const dMap = new Map((disk || []).map(x => [x.id, x]));
+    const result = []; const usedIds = new Set();
+    (local || []).forEach(item => {
+      usedIds.add(item.id);
+      const b = bMap.get(item.id);
+      const changed = !b || JSON.stringify(b) !== JSON.stringify(item);
+      const d = dMap.get(item.id);
+      if (changed) result.push(item);        // 自分がbaselineから変更(追加/編集)した行→自分の版を残す
+      else if (d) result.push(d);             // 変更していない行→最新のdisk版を採用（他の人の更新を取り込む）
+      else if (!b) result.push(item);         // 通常起きないはずのフォールバック
+      // else：変更なし＆disk側で削除済み→何もpushしない（他の人の削除を反映）
+    });
+    // disk側にしかない項目（baselineの時点でも自分は持っていなかった＝他の人が新規追加した行）を取り込む
+    (disk || []).forEach(d => { if (!usedIds.has(d.id) && !bMap.has(d.id)) result.push(d); });
+    return result;
+  }
+  function mergeField(baseline, local, disk, key) {
+    const changed = JSON.stringify(baseline ? baseline[key] : undefined) !== JSON.stringify(local ? local[key] : undefined);
+    if (changed || !disk) return local ? local[key] : undefined;
+    return key in disk ? disk[key] : local[key];
+  }
+  // フラットな連想配列（キー→値）の3-way merge。schedule.overrides/done/notes/gatesに使う
+  function mergeMapByKey(baseline, local, disk) {
+    const b = baseline || {}, l = local || {}, d = disk || {};
+    const result = {};
+    new Set([...Object.keys(l), ...Object.keys(d)]).forEach(k => {
+      if (k in l) {
+        const changed = JSON.stringify(b[k]) !== JSON.stringify(l[k]);
+        result[k] = (changed || !(k in d)) ? l[k] : d[k];
+      } else if (k in d && !(k in b)) {
+        result[k] = d[k];   // 他の人が新規追加したキー
+      }
+      // else：ローカルで削除済み＆baselineに存在＝他の人側の値は無視して削除を反映
+    });
+    return result;
+  }
+  function mergeModels(baseline, local, disk) {
+    const merged = JSON.parse(JSON.stringify(local));
+    ["active", "carryNext", "carryFuture"].forEach(k => { merged[k] = mergeArrayById(baseline[k], local[k], disk[k]); });
+    ["title", "mailDate", "designAxis", "tciAxis"].forEach(f => { merged[f] = mergeField(baseline, local, disk, f); });
+    const bs = baseline.schedule || {}, ls = local.schedule || {}, ds = disk.schedule || {};
+    merged.schedule = {
+      gates: mergeMapByKey(bs.gates, ls.gates, ds.gates),
+      listGate: mergeField(bs, ls, ds, "listGate"),
+      kickoff: mergeField(bs, ls, ds, "kickoff"),
+      overrides: mergeMapByKey(bs.overrides, ls.overrides, ds.overrides),
+      done: mergeMapByKey(bs.done, ls.done, ds.done),
+      notes: mergeMapByKey(bs.notes, ls.notes, ds.notes),
+      custom: mergeArrayById(bs.custom, ls.custom, ds.custom),
+    };
+    return merged;
   }
   // 旧データ互換：欠けフィールドを補完
   function normalize(m) {
@@ -1189,8 +1248,12 @@
     const entry = state.crossMonth[month]; if (!entry) return;
     entry.saving = true;
     entry.model.updatedAt = new Date().toISOString(); entry.model.updatedBy = state.user;
-    try { await S.writeMonth(month, entry.model); entry.dirty = false; }
-    catch (e) { console.error("[cross-month autosave] 保存に失敗:", e); }
+    try { await S.writeMonth(month, entry.model); entry.dirty = false; clearTimeout(entry.retryTimer); }
+    catch (e) {
+      console.error("[cross-month autosave] 保存に失敗:", e);
+      clearTimeout(entry.retryTimer);
+      entry.retryTimer = setTimeout(() => { if (entry.dirty) doCrossSave(month); }, 4000);
+    }
     entry.saving = false;
   }
   function flushCrossMonthSaves() {
@@ -2155,6 +2218,7 @@
     const [raw, mtime] = await Promise.all([S.readMonth(month), S.monthMtime(month)]);
     state.model = normalize(raw || emptyModel(month));
     state.model.title = window.monthLabel(month) + " DM施策";   // タイトルは対象月から自動
+    state.baseline = JSON.parse(JSON.stringify(state.model));   // 保存時3-way mergeの基準点
     state.mtime = mtime; state.editing = false;
     rerender(); startPolling();
     if (sel) sel.disabled = false;
@@ -2178,18 +2242,30 @@
   async function doAutoSave(force) {
     clearTimeout(autoTimer);
     if (!state.editing || !state.model || !S.isConnected()) return;
+    if (!force && !state.dirty) return;
     saving = true; updateSavedAt();
     const stamp = new Date().toISOString();
     try {
       state.model.updatedAt = stamp; state.model.updatedBy = state.user;   // 書き込み成功時のみ有効な値
-      await S.writeMonth(state.month, state.model);
+      // 保存直前に共有フォルダの最新版を読み直し、同時アクセス中の他の人の更新（違う場所の編集）を潰さないよう3-way mergeする
+      let diskRaw = null;
+      try { diskRaw = await S.readMonth(state.month); } catch (e) {}
+      const disk = diskRaw ? normalize(diskRaw) : state.model;
+      const merged = mergeModels(state.baseline || state.model, state.model, disk);
+      await S.writeMonth(state.month, merged);
+      state.model = merged;
       state.mtime = await S.monthMtime(state.month);
+      state.baseline = JSON.parse(JSON.stringify(merged));
       saving = false; state.saveError = ""; state.dirty = false; updateSavedAt();
+      clearTimeout(retryTimer);
+      rerender();   // mergeで行の参照が入れ替わることがあるため、編集中の入力欄が古い参照を掴んだままにならないよう反映
     } catch (e) {
-      // 書き込み失敗：保存済み扱いにしない。理由を画面に出す
+      // 書き込み失敗：保存済み扱いにしない。理由を画面に出す。同時アクセスが多いと起きやすい一時的な競合を想定し、数秒後に自動で再試行する
       saving = false; state.saveError = (e && e.message) ? e.message : String(e); updateSavedAt();
       console.error("[autosave] 保存に失敗:", e);
       if (force) alert("保存に失敗しました：" + state.saveError);
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => { if (state.dirty) doAutoSave(); }, 4000);
     }
   }
   // ---- モーダル ----
