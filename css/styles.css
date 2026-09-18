@@ -576,6 +576,7 @@ body.readonly .cancel-toggle, body.readonly .cancel-grid input, body.readonly .c
 .cross-month-table { width: 100%; }
 .cross-month-table th { text-align: left; font-size: 11px; color: var(--muted); font-weight: 700; padding: 6px 10px; border-bottom: 1px solid var(--line); }
 .cross-month-table td { padding: 6px 10px; border-bottom: 1px solid var(--line-2); }
-.cross-month-table td.cm-name, .cross-month-table .cm-name { font-size: 12px; font-weight: 600; color: var(--muted); }
+.cross-month-table td.cm-name, .cross-month-table .cm-name { font-size: 12px; font-weight: 600; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+.cross-month-table .cm-exp { padding: 3px; font-size: 13px; flex-shrink: 0; }
 .cross-month-table input, .cross-month-table select { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 12px; font-family: inherit; background: #fff; box-sizing: border-box; }
 body.readonly .cross-month-table input, body.readonly .cross-month-table select { pointer-events: none; background: transparent; }

@@ -16,6 +16,7 @@
     saveError: "", dirty: false,
     tab: "list", schedOpen: {},
     crossMonth: {},   // 施策名フィルター中に表示する過去月の比較データ（{month: {model,dirty,saving,timer}|null}）
+    crossExpanded: {},   // 過去月比較の展開状態（キー："month:id"）
   };
   const cf = { data: [], cards: [], dots: [], sel: 0, dragMode: false, opening: false };
   let saving = false, autoTimer = null;   // 自動保存の状態
@@ -1137,13 +1138,13 @@
 
   function renderBody() {
     const root = $("#board"); root.innerHTML = "";
-    if (!S.isConnected()) { root.append(el("div", { class: "placeholder" }, "右上「📁 共有フォルダに接続」で、チームの共有フォルダを選んでください。保存データ（各月のJSON）がそこに読み書きされます。")); $("#crossMonthPanel").innerHTML = ""; return; }
-    if (!state.model) { root.append(el("div", { class: "placeholder" }, "「対象月」で月を選ぶか、「＋ 新規月」で作成してください。")); $("#crossMonthPanel").innerHTML = ""; return; }
+    if (!S.isConnected()) { root.append(el("div", { class: "placeholder" }, "右上「📁 共有フォルダに接続」で、チームの共有フォルダを選んでください。保存データ（各月のJSON）がそこに読み書きされます。")); return; }
+    if (!state.model) { root.append(el("div", { class: "placeholder" }, "「対象月」で月を選ぶか、「＋ 新規月」で作成してください。")); return; }
     computeFamilyColors();
     root.append(renderMeasureSection("active", "今月実施（施策）", "calendar-check"));
+    root.append(renderCrossMonthPanel());
     root.append(renderCancelLog());
     root.append(renderMeasureSection("carryNext", "アイデア欄", "bulb"));
-    renderCrossMonthPanel();
   }
   // 施策名フィルター中に、過去3ヶ月分の同名施策を月ごとに並べて表示（その場で編集・自動保存可）
   function crossMonthTargets() {
@@ -1179,37 +1180,89 @@
   function flushCrossMonthSaves() {
     Object.keys(state.crossMonth).forEach(mo => { const e = state.crossMonth[mo]; if (e && e.dirty) { clearTimeout(e.timer); doCrossSave(mo); } });
   }
-  // 過去月の1行（軽量版：ドラッグ・選択・展開・中止操作は無し。担当/種別/取得/郵便割合/件数/正式名だけその場で編集可）
+  // 過去月の入力欄は#board委譲リスナ（markDirty等）の対象外にするため、必ずバブリングを止める
+  function crossInputEvent(inp, type, handler) { inp.addEventListener(type, e => { e.stopPropagation(); handler(e); }); }
+  // 過去月の1行（軽量版：ドラッグ・選択・中止操作は無し。担当/種別/取得/郵便割合/件数/正式名＋展開で詳細も編集可）
   function crossMonthRow(month, m) {
     const tr = el("tr", {});
     const td = (c) => { const x = el("td", {}); x.append(c); return x; };
-    tr.append(el("td", { class: "cm-name" }, m.baseName || "(無題)"));
+    const ck = state.crossExpanded[month + ":" + m.id];
+    const exp = el("button", { class: "iconbtn cm-exp" + (ck ? " open" : "") }, icon(ck ? "chevron-down" : "chevron-right"));
+    exp.addEventListener("click", e => { e.stopPropagation(); state.crossExpanded[month + ":" + m.id] = !ck; renderBody(); });
+    tr.append(el("td", { class: "cm-name" }, exp, m.baseName || "(無題)"));
     const ownIn = el("input", { class: "w-own", value: m.owner || "" });
-    ownIn.addEventListener("input", () => { m.owner = ownIn.value; scheduleCrossSave(month); });
+    crossInputEvent(ownIn, "input", () => { m.owner = ownIn.value; scheduleCrossSave(month); });
     tr.append(td(ownIn));
     const kindSel = pick(m, "kind", M.kinds, { class: "w-kind" });
-    kindSel.addEventListener("change", () => { m.kind = kindSel.value; scheduleCrossSave(month); });
+    crossInputEvent(kindSel, "change", () => { m.kind = kindSel.value; scheduleCrossSave(month); });
     tr.append(td(kindSel));
     const lmSel = pick(m, "listMethod", M.listMethods, { class: "w-lm" });
-    lmSel.addEventListener("change", () => { m.listMethod = lmSel.value; scheduleCrossSave(month); });
+    crossInputEvent(lmSel, "change", () => { m.listMethod = lmSel.value; scheduleCrossSave(month); });
     tr.append(td(lmSel));
     const dlvIn = el("input", { class: "w-souf", inputmode: "numeric", value: m.delivery ?? "100" });
-    dlvIn.addEventListener("input", () => { dlvIn.value = dlvIn.value.replace(/[^0-9]/g, ""); m.delivery = dlvIn.value; scheduleCrossSave(month); });
+    crossInputEvent(dlvIn, "input", () => { dlvIn.value = dlvIn.value.replace(/[^0-9]/g, ""); m.delivery = dlvIn.value; scheduleCrossSave(month); });
     tr.append(td(dlvIn));
     const cntIn = numField(m, "estimatedCount", false, "w-cnt");
-    cntIn.addEventListener("input", () => scheduleCrossSave(month));
+    crossInputEvent(cntIn, "input", () => scheduleCrossSave(month));
     tr.append(td(cntIn));
     const offIn = el("input", { value: m.officialName || derive(m, month).fullName, title: "編集可" });
-    offIn.addEventListener("input", () => { m.officialName = offIn.value; scheduleCrossSave(month); });
+    crossInputEvent(offIn, "input", () => { m.officialName = offIn.value; scheduleCrossSave(month); });
     tr.append(td(offIn));
     return tr;
   }
+  // 過去月の展開詳細（本体の detailRow() と同じ項目構成。#board委譲リスナへは伝播させない軽量実装）
+  function crossMonthDetail(month, m) {
+    const tr = el("tr", { class: "detail-row" });
+    const cell = el("td", { colspan: "7" });
+    const box = el("div", { class: "detail" });
+    const grid = el("div", { class: "detail-grid" });
+    const mkTa = (label, f, cls, placeholder) => {
+      const w = el("div", { class: "dw-field " + cls });
+      w.append(el("div", { class: "dw-lab" }, label));
+      const ta = el("textarea", { class: "d-note", rows: "1", placeholder: placeholder || "" }); ta.value = m[f] || "";
+      const grow = () => { ta.style.height = "auto"; ta.style.height = Math.max(30, ta.scrollHeight) + "px"; };
+      crossInputEvent(ta, "input", () => { m[f] = ta.value; grow(); scheduleCrossSave(month); });
+      w.append(ta); setTimeout(grow, 0);
+      return w;
+    };
+    const mkIn = (label, f, cls, placeholder) => {
+      const w = el("div", { class: "dw-field " + cls });
+      w.append(el("div", { class: "dw-lab" }, label));
+      const i = el("input", { value: m[f] || "", placeholder: placeholder || "" });
+      crossInputEvent(i, "input", () => { m[f] = i.value; scheduleCrossSave(month); });
+      w.append(i);
+      return w;
+    };
+    const wOrig = el("div", { class: "dw-field col-origcode" });
+    wOrig.append(el("div", { class: "dw-lab" }, "元素材コード"));
+    const pair = el("div", { class: "origcode-pair" });
+    [["origCode1", "①"], ["origCode2", "②"]].forEach(([f, ph]) => {
+      const i = el("input", { class: "origcode-in", value: m[f] || "", placeholder: ph });
+      crossInputEvent(i, "input", () => { m[f] = i.value; scheduleCrossSave(month); });
+      pair.append(i);
+    });
+    wOrig.append(pair);
+    const wSpec = el("div", { class: "dw-field col-spec" });
+    wSpec.append(el("div", { class: "dw-lab" }, "仕様"));
+    const specSel = el("select", {});
+    ["Z圧着", "A6はがき"].forEach(v => { const op = el("option", { value: v }, v); if ((m.spec || "Z圧着") === v) op.selected = true; specSel.append(op); });
+    crossInputEvent(specSel, "change", () => { m.spec = specSel.value; scheduleCrossSave(month); });
+    wSpec.append(specSel);
+    const wProdBenefit = el("div", { class: "dw-stack col-prodbenefit" });
+    wProdBenefit.append(mkIn("掲載商品", "products", "col-prod"), mkIn("特典", "benefit", "col-benefit"));
+    const wFixSpec = el("div", { class: "dw-stack col-fixspec" });
+    const fixWrap = mkIn("FIX時期", "roFixDate", "col-fix", "yyyy/mm/dd");
+    const fixInp = fixWrap.querySelector("input");
+    fixInp.addEventListener("blur", () => { fixInp.value = normalizeDateSlashes(fixInp.value); m.roFixDate = fixInp.value; });
+    wFixSpec.append(fixWrap, wSpec);
+    grid.append(mkTa("リスト条件", "note", "col-note"), mkTa("施策概要", "supplement", "col-supp"), wOrig, mkTa("補足", "remark", "col-remark"), mkTa("補足_特別対応（印刷会社申し送り）", "printerNote", "col-printernote"), wProdBenefit, wFixSpec);
+    box.append(grid); cell.append(box); tr.append(cell);
+    return tr;
+  }
   function renderCrossMonthPanel() {
-    const box = $("#crossMonthPanel"); if (!box) return;
-    box.innerHTML = "";
     const names = state.filters.baseName;
-    if (!names || !names.length) return;
     const wrap = el("div", { class: "cross-month" });
+    if (!names || !names.length) return wrap;
     wrap.append(el("div", { class: "sec-head" }, el("h2", {}, icon("history"), " 過去の同名施策（直近3ヶ月・その場で編集可）")));
     crossMonthTargets().forEach(month => {
       const entry = state.crossMonth[month];
@@ -1223,12 +1276,15 @@
       const thr = el("tr", {}, el("th", {}, "施策名"), el("th", {}, "担当"), el("th", {}, "種別"), el("th", {}, "取得"), el("th", {}, "郵便割合"), el("th", {}, "件数"), el("th", {}, "正式名（編集可）"));
       table.append(el("thead", {}, thr));
       const tb = el("tbody", {});
-      rows.forEach(m => tb.append(crossMonthRow(month, m)));
+      rows.forEach(m => {
+        tb.append(crossMonthRow(month, m));
+        if (state.crossExpanded[month + ":" + m.id]) tb.append(crossMonthDetail(month, m));
+      });
       table.append(tb);
       card.append(table);
       wrap.append(card);
     });
-    box.append(wrap);
+    return wrap;
   }
   // 中止・振替ログ：中止になった施策と、そのリストの振替先・件数・理由を後からまとめて追える記録
   function renderCancelLog() {
@@ -1971,7 +2027,6 @@
     document.querySelectorAll(".sg-tab").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
     $("#summary").style.display = tab === "list" ? "" : "none";
     $("#board").style.display = tab === "list" ? "" : "none";
-    $("#crossMonthPanel").style.display = tab === "list" ? "" : "none";
     $("#schedBoard").style.display = tab === "list" ? "none" : "";
     if (tab === "list") renderBody(); else renderScheduleBoard();
   }
