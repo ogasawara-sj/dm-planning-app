@@ -15,6 +15,7 @@
     dropOverId: null, dropAfter: false, dragCheckOn: null,
     saveError: "", dirty: false,
     tab: "list", schedOpen: {},
+    crossMonth: {},   // 施策名フィルター中に表示する過去月の比較データ（{month: {model,dirty,saving,timer}|null}）
   };
   const cf = { data: [], cards: [], dots: [], sel: 0, dragMode: false, opening: false };
   let saving = false, autoTimer = null;   // 自動保存の状態
@@ -1136,12 +1137,98 @@
 
   function renderBody() {
     const root = $("#board"); root.innerHTML = "";
-    if (!S.isConnected()) { root.append(el("div", { class: "placeholder" }, "右上「📁 共有フォルダに接続」で、チームの共有フォルダを選んでください。保存データ（各月のJSON）がそこに読み書きされます。")); return; }
-    if (!state.model) { root.append(el("div", { class: "placeholder" }, "「対象月」で月を選ぶか、「＋ 新規月」で作成してください。")); return; }
+    if (!S.isConnected()) { root.append(el("div", { class: "placeholder" }, "右上「📁 共有フォルダに接続」で、チームの共有フォルダを選んでください。保存データ（各月のJSON）がそこに読み書きされます。")); $("#crossMonthPanel").innerHTML = ""; return; }
+    if (!state.model) { root.append(el("div", { class: "placeholder" }, "「対象月」で月を選ぶか、「＋ 新規月」で作成してください。")); $("#crossMonthPanel").innerHTML = ""; return; }
     computeFamilyColors();
     root.append(renderMeasureSection("active", "今月実施（施策）", "calendar-check"));
     root.append(renderCancelLog());
     root.append(renderMeasureSection("carryNext", "アイデア欄", "bulb"));
+    renderCrossMonthPanel();
+  }
+  // 施策名フィルター中に、過去3ヶ月分の同名施策を月ごとに並べて表示（その場で編集・自動保存可）
+  function crossMonthTargets() {
+    if (!state.month) return [];
+    return [1, 2, 3].map(n => monthsBeforeYYYYMM(state.month, n));
+  }
+  async function ensureCrossMonthLoaded(month) {
+    if (state.crossMonth[month] !== undefined) return;
+    state.crossMonth[month] = null;   // 読み込み中〜対象なし、の間は一旦nullにして多重読み込みを防止
+    try {
+      const months = await S.listMonths();
+      if (!months.includes(month)) return;
+      const raw = await S.readMonth(month);
+      if (!raw) return;
+      state.crossMonth[month] = { model: normalize(raw), dirty: false, saving: false, timer: null };
+      if (state.tab === "list") renderBody();
+    } catch (e) { /* 読み込めなければ「対象なし」として静かに諦める */ }
+  }
+  function scheduleCrossSave(month) {
+    const entry = state.crossMonth[month]; if (!entry) return;
+    entry.dirty = true;
+    clearTimeout(entry.timer);
+    entry.timer = setTimeout(() => doCrossSave(month), 1300);
+  }
+  async function doCrossSave(month) {
+    const entry = state.crossMonth[month]; if (!entry) return;
+    entry.saving = true;
+    entry.model.updatedAt = new Date().toISOString(); entry.model.updatedBy = state.user;
+    try { await S.writeMonth(month, entry.model); entry.dirty = false; }
+    catch (e) { console.error("[cross-month autosave] 保存に失敗:", e); }
+    entry.saving = false;
+  }
+  function flushCrossMonthSaves() {
+    Object.keys(state.crossMonth).forEach(mo => { const e = state.crossMonth[mo]; if (e && e.dirty) { clearTimeout(e.timer); doCrossSave(mo); } });
+  }
+  // 過去月の1行（軽量版：ドラッグ・選択・展開・中止操作は無し。担当/種別/取得/郵便割合/件数/正式名だけその場で編集可）
+  function crossMonthRow(month, m) {
+    const tr = el("tr", {});
+    const td = (c) => { const x = el("td", {}); x.append(c); return x; };
+    tr.append(el("td", { class: "cm-name" }, m.baseName || "(無題)"));
+    const ownIn = el("input", { class: "w-own", value: m.owner || "" });
+    ownIn.addEventListener("input", () => { m.owner = ownIn.value; scheduleCrossSave(month); });
+    tr.append(td(ownIn));
+    const kindSel = pick(m, "kind", M.kinds, { class: "w-kind" });
+    kindSel.addEventListener("change", () => { m.kind = kindSel.value; scheduleCrossSave(month); });
+    tr.append(td(kindSel));
+    const lmSel = pick(m, "listMethod", M.listMethods, { class: "w-lm" });
+    lmSel.addEventListener("change", () => { m.listMethod = lmSel.value; scheduleCrossSave(month); });
+    tr.append(td(lmSel));
+    const dlvIn = el("input", { class: "w-souf", inputmode: "numeric", value: m.delivery ?? "100" });
+    dlvIn.addEventListener("input", () => { dlvIn.value = dlvIn.value.replace(/[^0-9]/g, ""); m.delivery = dlvIn.value; scheduleCrossSave(month); });
+    tr.append(td(dlvIn));
+    const cntIn = numField(m, "estimatedCount", false, "w-cnt");
+    cntIn.addEventListener("input", () => scheduleCrossSave(month));
+    tr.append(td(cntIn));
+    const offIn = el("input", { value: m.officialName || derive(m, month).fullName, title: "編集可" });
+    offIn.addEventListener("input", () => { m.officialName = offIn.value; scheduleCrossSave(month); });
+    tr.append(td(offIn));
+    return tr;
+  }
+  function renderCrossMonthPanel() {
+    const box = $("#crossMonthPanel"); if (!box) return;
+    box.innerHTML = "";
+    const names = state.filters.baseName;
+    if (!names || !names.length) return;
+    const wrap = el("div", { class: "cross-month" });
+    wrap.append(el("div", { class: "sec-head" }, el("h2", {}, icon("history"), " 過去の同名施策（直近3ヶ月・その場で編集可）")));
+    crossMonthTargets().forEach(month => {
+      const entry = state.crossMonth[month];
+      if (entry === undefined) { ensureCrossMonthLoaded(month); wrap.append(el("div", { class: "cross-month-card loading" }, `${window.monthLabel(month)}…読み込み中`)); return; }
+      if (entry === null) return;   // 共有フォルダにその月のデータが無い＝静かに省略
+      const rows = entry.model.active.filter(m => names.includes(m.baseName || ""));
+      if (!rows.length) return;
+      const card = el("div", { class: "cross-month-card" });
+      card.append(el("div", { class: "cross-month-head" }, `${window.monthLabel(month)}${entry.saving ? "（保存中…）" : ""}`, el("span", { class: "sec-count" }, String(rows.length))));
+      const table = el("table", { class: "grid cross-month-table" });
+      const thr = el("tr", {}, el("th", {}, "施策名"), el("th", {}, "担当"), el("th", {}, "種別"), el("th", {}, "取得"), el("th", {}, "郵便割合"), el("th", {}, "件数"), el("th", {}, "正式名（編集可）"));
+      table.append(el("thead", {}, thr));
+      const tb = el("tbody", {});
+      rows.forEach(m => tb.append(crossMonthRow(month, m)));
+      table.append(tb);
+      card.append(table);
+      wrap.append(card);
+    });
+    box.append(wrap);
   }
   // 中止・振替ログ：中止になった施策と、そのリストの振替先・件数・理由を後からまとめて追える記録
   function renderCancelLog() {
@@ -1884,6 +1971,7 @@
     document.querySelectorAll(".sg-tab").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
     $("#summary").style.display = tab === "list" ? "" : "none";
     $("#board").style.display = tab === "list" ? "" : "none";
+    $("#crossMonthPanel").style.display = tab === "list" ? "" : "none";
     $("#schedBoard").style.display = tab === "list" ? "none" : "";
     if (tab === "list") renderBody(); else renderScheduleBoard();
   }
@@ -1966,6 +2054,9 @@
   async function loadMonth(month) {
     if (!month) return;
     const sel = $("#monthSelect"); if (sel) sel.disabled = true;   // 読み込み中は触れないように（共有フォルダ読み取り待ち）
+    // 表示中だった過去月比較の未保存分は月を切り替える前に確定させ、比較対象（直近3ヶ月）をリセットする
+    await Promise.all(Object.keys(state.crossMonth).map(mo => { const e = state.crossMonth[mo]; return (e && e.dirty) ? doCrossSave(mo) : null; }));
+    state.crossMonth = {};
     state.month = month; state.selected.clear();
     // 内容と更新日時を同時に読みに行く（順番に読むより速い）
     const [raw, mtime] = await Promise.all([S.readMonth(month), S.monthMtime(month)]);
@@ -2250,13 +2341,14 @@
     document.addEventListener("mouseup", () => { state.dragCheckOn = null; document.body.classList.remove("no-usersel"); });
     // 閉じる直前：未保存があれば保存を発火し、完了保証がないため確認ダイアログで引き止める
     window.addEventListener("beforeunload", (e) => {
+      flushCrossMonthSaves();
       if (!state.editing) return;
       if (state.dirty || saving) { doAutoSave(true); e.preventDefault(); e.returnValue = ""; return ""; }
       S.clearLock(state.month);
     });
-    window.addEventListener("blur", () => { if (state.editing) doAutoSave(); });   // 画面を離れたら即保存
+    window.addEventListener("blur", () => { if (state.editing) doAutoSave(); flushCrossMonthSaves(); });   // 画面を離れたら即保存
     // タブを隠す/最小化した瞬間にも保存（beforeunloadより確実に発火する）
-    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && state.editing && state.dirty) doAutoSave(); });
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { if (state.editing && state.dirty) doAutoSave(); flushCrossMonthSaves(); } });
     if (S.supported) { try { await S.tryRestore(); renderHeader(); } catch (e) {} }
     await renderMonthSelect();
     if (S.isConnected()) {

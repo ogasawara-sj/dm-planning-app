@@ -565,3 +565,17 @@ tr.cancelled-row.stripe { background: var(--danger-soft); }
 .cancel-log-date { font-size: 11px; color: var(--faint); }
 .cancel-log-reason { font-size: 12px; color: var(--ink); margin-bottom: 4px; }
 body.readonly .cancel-toggle, body.readonly .cancel-grid input, body.readonly .cancel-grid select { pointer-events: none; }
+
+/* 過去の同名施策（施策名フィルター中に直近3ヶ月分を並べて表示・その場で編集） */
+.cross-month { margin-top: 18px; }
+.cross-month .sec-head { background: var(--accent-soft); border: 1px solid var(--edit-line); border-radius: var(--r-lg) var(--r-lg) 0 0; }
+.cross-month .sec-head h2 { color: var(--accent-d); }
+.cross-month-card { background: var(--panel); border: 1px solid var(--line); border-top: none; margin-bottom: 10px; border-radius: 0 0 var(--r-lg) var(--r-lg); overflow: hidden; }
+.cross-month-card.loading { padding: 12px 16px; color: var(--muted); font-size: 12px; border-radius: var(--r-lg); }
+.cross-month-head { display: flex; align-items: center; gap: 8px; padding: 9px 16px; background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 700; }
+.cross-month-table { width: 100%; }
+.cross-month-table th { text-align: left; font-size: 11px; color: var(--muted); font-weight: 700; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+.cross-month-table td { padding: 6px 10px; border-bottom: 1px solid var(--line-2); }
+.cross-month-table td.cm-name, .cross-month-table .cm-name { font-size: 12px; font-weight: 600; color: var(--muted); }
+.cross-month-table input, .cross-month-table select { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 12px; font-family: inherit; background: #fff; box-sizing: border-box; }
+body.readonly .cross-month-table input, body.readonly .cross-month-table select { pointer-events: none; background: transparent; }
