@@ -13,6 +13,7 @@
     draggingMeasure: false, dragMeasure: null,
     selected: new Set(), dragBatch: null, dragCanceled: false, dragFromSel: false, dragMoved: false,
     dropOverId: null, dropAfter: false, dragCheckOn: null,
+    crossSelected: new Set(), crossDragCheckOn: null,
     saveError: "", dirty: false,
     tab: "list", schedOpen: {},
     crossMonth: {},   // 施策名フィルター中に表示する過去月の比較データ（{month: {model,dirty,saving,timer}|null}）
@@ -779,6 +780,21 @@
     bar.append(el("button", { class: "btn small ghost onwhite", onclick: clearSel }, "選択解除"));
     bar.classList.add("show");
   }
+  // 過去月比較の選択操作バー（キーは"month:id"の複合キー）
+  function updateCrossSelBar() {
+    let bar = $("#crossSelBar");
+    if (!bar) { bar = el("div", { id: "crossSelBar", class: "sel-bar" }); document.body.append(bar); }
+    const n = state.crossSelected.size;
+    if (n === 0) { bar.classList.remove("show"); bar.innerHTML = ""; return; }
+    bar.innerHTML = "";
+    bar.append(el("span", { class: "sel-sum" }, `過去月：${n}件選択中`));
+    bar.append(el("button", { class: "btn small ghost onwhite", onclick: () => setCrossSelExpanded(true) }, "▼ まとめて開く"));
+    bar.append(el("button", { class: "btn small ghost onwhite", onclick: () => setCrossSelExpanded(false) }, "▲ まとめて閉じる"));
+    bar.append(el("button", { class: "btn small ghost onwhite", onclick: clearCrossSel }, "選択解除"));
+    bar.classList.add("show");
+  }
+  function setCrossSelExpanded(on) { state.crossSelected.forEach(key => { state.crossExpanded[key] = on; }); renderBody(); }
+  function clearCrossSel() { state.crossSelected.clear(); renderBody(); }
   // 複数施策を別の月へ移動（コピー元＝現在の月）
   async function moveBatchToMonth(ids, targetMonth) {
     if (!state.editing || !targetMonth) return;
@@ -1187,10 +1203,21 @@
   function crossMonthRow(month, m, no) {
     const tr = el("tr", {});
     const td = (c, cls) => { const x = el("td", cls ? { class: cls } : {}); x.append(c); return x; };
-    const ck = state.crossExpanded[month + ":" + m.id];
+    const selKey = month + ":" + m.id;
+    const ck = state.crossExpanded[selKey];
     const exp = el("button", { class: "iconbtn cm-exp" + (ck ? " open" : "") }, icon(ck ? "chevron-down" : "chevron-right"));
-    exp.addEventListener("click", e => { e.stopPropagation(); state.crossExpanded[month + ":" + m.id] = !ck; renderBody(); });
-    tr.append(td(exp, "c-drag"));
+    exp.addEventListener("click", e => { e.stopPropagation(); state.crossExpanded[selKey] = !ck; renderBody(); });
+    // 選択チェック：本体と同じ「ドラッグで連続チェック」操作。選択中に「まとめて開く/閉じる」が使える
+    const chk = el("input", { type: "checkbox", class: "rowsel", title: "選択（ドラッグでまとめてチェック）" });
+    chk.checked = state.crossSelected.has(selKey);
+    const setChecked = (on) => { chk.checked = on; if (on) state.crossSelected.add(selKey); else state.crossSelected.delete(selKey); tr.classList.toggle("selected", on); updateCrossSelBar(); };
+    let mouseHandled = false;
+    chk.addEventListener("mousedown", e => { e.stopPropagation(); e.preventDefault(); mouseHandled = true; state.crossDragCheckOn = !chk.checked; setChecked(state.crossDragCheckOn); document.body.classList.add("no-usersel"); });
+    chk.addEventListener("click", e => { e.stopPropagation(); if (mouseHandled) { e.preventDefault(); mouseHandled = false; } });
+    chk.addEventListener("mouseenter", () => { if (state.crossDragCheckOn != null) setChecked(state.crossDragCheckOn); });
+    if (state.crossSelected.has(selKey)) tr.classList.add("selected");
+    const dragCell = el("td", { class: "c-drag" }, chk, exp);
+    tr.append(dragCell);
     tr.append(el("td", { class: "c-no" }, String(no)));
     tr.append(td(el("div", {}, m.baseName || "(無題)"), "w-name"));
     const ownIn = el("input", { class: "w-own", value: m.owner || "" });
@@ -1271,7 +1298,7 @@
   function renderCrossMonthPanel() {
     const names = state.filters.baseName;
     const wrap = el("div", { class: "cross-month" });
-    if (!names || !names.length) return wrap;
+    if (!names || !names.length) { state.crossSelected.clear(); updateCrossSelBar(); return wrap; }
     wrap.append(el("div", { class: "sec-head" }, el("h2", {}, icon("history"), " 過去の同名施策（直近3ヶ月・その場で編集可）")));
     crossMonthTargets().forEach(month => {
       const entry = state.crossMonth[month];
@@ -1282,7 +1309,8 @@
       const card = el("div", { class: "cross-month-card" });
       card.append(el("div", { class: "cross-month-head" }, `${window.monthLabel(month)}${entry.saving ? "（保存中…）" : ""}`, el("span", { class: "sec-count" }, String(rows.length))));
       const table = el("table", { class: "grid cross-month-table" });
-      const thr = el("tr", {}, el("th", {}, ""), el("th", {}, "No."), el("th", {}, "施策名"), el("th", {}, "担当"), el("th", {}, "種別"), el("th", {}, "取得"), el("th", {}, "郵便割合"), el("th", {}, "P3/List"), el("th", {}, "優先"), el("th", {}, "件数"), el("th", {}, "正式名（編集可）"));
+      const th = (label, width) => el("th", width ? { style: `width:${width}px` } : {}, label);
+      const thr = el("tr", {}, th("", 94), th("No.", 32), th("施策名", 150), th("担当", 76), th("種別", 78), th("取得", 78), th("郵便割合", 70), th("P3/List", 56), th("優先", 48), th("件数", 70), th("正式名（編集可）"));
       table.append(el("thead", {}, thr));
       const tb = el("tbody", {});
       rows.forEach((m, i) => {
@@ -1293,6 +1321,7 @@
       card.append(table);
       wrap.append(card);
     });
+    updateCrossSelBar();
     return wrap;
   }
   // 中止・振替ログ：中止になった施策と、そのリストの振替先・件数・理由を後からまとめて追える記録
@@ -2120,7 +2149,7 @@
     const sel = $("#monthSelect"); if (sel) sel.disabled = true;   // 読み込み中は触れないように（共有フォルダ読み取り待ち）
     // 表示中だった過去月比較の未保存分は月を切り替える前に確定させ、比較対象（直近3ヶ月）をリセットする
     await Promise.all(Object.keys(state.crossMonth).map(mo => { const e = state.crossMonth[mo]; return (e && e.dirty) ? doCrossSave(mo) : null; }));
-    state.crossMonth = {};
+    state.crossMonth = {}; state.crossSelected.clear(); state.crossExpanded = {};
     state.month = month; state.selected.clear();
     // 内容と更新日時を同時に読みに行く（順番に読むより速い）
     const [raw, mtime] = await Promise.all([S.readMonth(month), S.monthMtime(month)]);
@@ -2402,7 +2431,7 @@
       if (inp) { e.preventDefault(); inp.focus(); try { inp.select && inp.select(); } catch (_) {} }
     });
     // チェック欄のドラッグ選択：マウスボタンを離したら終了
-    document.addEventListener("mouseup", () => { state.dragCheckOn = null; document.body.classList.remove("no-usersel"); });
+    document.addEventListener("mouseup", () => { state.dragCheckOn = null; state.crossDragCheckOn = null; document.body.classList.remove("no-usersel"); });
     // 閉じる直前：未保存があれば保存を発火し、完了保証がないため確認ダイアログで引き止める
     window.addEventListener("beforeunload", (e) => {
       flushCrossMonthSaves();

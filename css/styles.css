@@ -216,6 +216,7 @@ tr.selected { box-shadow: inset 0 0 0 2px var(--accent); }
 /* ドロップ先セクションのハイライト */
 .sec.drop-target { outline: 2px dashed var(--accent); outline-offset: 3px; border-radius: 14px; }
 /* 複数選択の操作バー */
+#crossSelBar { bottom: 60px; }
 .sel-bar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 70; display: none; gap: 5px; align-items: center;
   background: #263042; color: #fff; padding: 5px 9px; border-radius: 10px; box-shadow: var(--sh-lg); }
 .sel-bar.show { display: flex; animation: selin .18s ease; }
@@ -573,12 +574,11 @@ body.readonly .cancel-toggle, body.readonly .cancel-grid input, body.readonly .c
 .cross-month-card { background: var(--panel); border: 1px solid var(--line); border-top: none; margin-bottom: 10px; border-radius: 0 0 var(--r-lg) var(--r-lg); overflow: hidden; }
 .cross-month-card.loading { padding: 12px 16px; color: var(--muted); font-size: 12px; border-radius: var(--r-lg); }
 .cross-month-head { display: flex; align-items: center; gap: 8px; padding: 9px 16px; background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 700; }
-.cross-month-table { width: 100%; }
+.cross-month-table { width: 100%; table-layout: fixed; }
 .cross-month-table th { text-align: left; font-size: 11px; color: var(--muted); font-weight: 700; padding: 6px 10px; border-bottom: 1px solid var(--line); }
 .cross-month-table td { padding: 6px 10px; border-bottom: 1px solid var(--line-2); }
 .cross-month-table .w-name { font-size: 12.5px; font-weight: 700; color: var(--accent-d); }
 .cross-month-table .cm-exp { padding: 3px; font-size: 13px; }
 .cross-month-table input, .cross-month-table select { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 12px; font-family: inherit; background: #fff; box-sizing: border-box; }
-.cross-month-table input.w-own, .cross-month-table input.w-souf, .cross-month-table input.w-p3, .cross-month-table input.w-pri, .cross-month-table input.w-cnt { width: auto; }
 .cross-month-table input.namein { padding-right: 8px; }
 body.readonly .cross-month-table input, body.readonly .cross-month-table select { pointer-events: none; background: transparent; }
