@@ -1182,14 +1182,17 @@
   }
   // 過去月の入力欄は#board委譲リスナ（markDirty等）の対象外にするため、必ずバブリングを止める
   function crossInputEvent(inp, type, handler) { inp.addEventListener(type, e => { e.stopPropagation(); handler(e); }); }
-  // 過去月の1行（軽量版：ドラッグ・選択・中止操作は無し。担当/種別/取得/郵便割合/件数/正式名＋展開で詳細も編集可）
-  function crossMonthRow(month, m) {
+  // 過去月の1行（本体の施策一覧と同じ列構成・バランスで表示。ドラッグ・選択・コピー・ハイライト・中止操作は無し。
+  // 展開で詳細も編集可）
+  function crossMonthRow(month, m, no) {
     const tr = el("tr", {});
-    const td = (c) => { const x = el("td", {}); x.append(c); return x; };
+    const td = (c, cls) => { const x = el("td", cls ? { class: cls } : {}); x.append(c); return x; };
     const ck = state.crossExpanded[month + ":" + m.id];
     const exp = el("button", { class: "iconbtn cm-exp" + (ck ? " open" : "") }, icon(ck ? "chevron-down" : "chevron-right"));
     exp.addEventListener("click", e => { e.stopPropagation(); state.crossExpanded[month + ":" + m.id] = !ck; renderBody(); });
-    tr.append(el("td", { class: "cm-name" }, exp, m.baseName || "(無題)"));
+    tr.append(td(exp, "c-drag"));
+    tr.append(el("td", { class: "c-no" }, String(no)));
+    tr.append(td(el("div", {}, m.baseName || "(無題)"), "w-name"));
     const ownIn = el("input", { class: "w-own", value: m.owner || "" });
     crossInputEvent(ownIn, "input", () => { m.owner = ownIn.value; scheduleCrossSave(month); });
     tr.append(td(ownIn));
@@ -1201,19 +1204,25 @@
     tr.append(td(lmSel));
     const dlvIn = el("input", { class: "w-souf", inputmode: "numeric", value: m.delivery ?? "100" });
     crossInputEvent(dlvIn, "input", () => { dlvIn.value = dlvIn.value.replace(/[^0-9]/g, ""); m.delivery = dlvIn.value; scheduleCrossSave(month); });
-    tr.append(td(dlvIn));
+    tr.append(el("td", {}, el("div", { class: "delivery-field" }, dlvIn, el("span", { class: "pct-suffix" }, "%"))));
+    const p3In = numField(m, "p3", true, "w-p3");
+    crossInputEvent(p3In, "input", () => scheduleCrossSave(month));
+    tr.append(td(p3In));
+    const priIn = el("input", { class: "w-pri", type: "number", min: "1", value: m.priority || "" });
+    crossInputEvent(priIn, "input", () => { m.priority = priIn.value; scheduleCrossSave(month); });
+    tr.append(td(priIn));
     const cntIn = numField(m, "estimatedCount", false, "w-cnt");
     crossInputEvent(cntIn, "input", () => scheduleCrossSave(month));
     tr.append(td(cntIn));
-    const offIn = el("input", { value: m.officialName || derive(m, month).fullName, title: "編集可" });
+    const offIn = el("input", { class: "namein", value: m.officialName || derive(m, month).fullName });
     crossInputEvent(offIn, "input", () => { m.officialName = offIn.value; scheduleCrossSave(month); });
-    tr.append(td(offIn));
+    tr.append(td(offIn, "c-derived"));
     return tr;
   }
   // 過去月の展開詳細（本体の detailRow() と同じ項目構成。#board委譲リスナへは伝播させない軽量実装）
   function crossMonthDetail(month, m) {
     const tr = el("tr", { class: "detail-row" });
-    const cell = el("td", { colspan: "7" });
+    const cell = el("td", { colspan: "11" });
     const box = el("div", { class: "detail" });
     const grid = el("div", { class: "detail-grid" });
     const mkTa = (label, f, cls, placeholder) => {
@@ -1273,11 +1282,11 @@
       const card = el("div", { class: "cross-month-card" });
       card.append(el("div", { class: "cross-month-head" }, `${window.monthLabel(month)}${entry.saving ? "（保存中…）" : ""}`, el("span", { class: "sec-count" }, String(rows.length))));
       const table = el("table", { class: "grid cross-month-table" });
-      const thr = el("tr", {}, el("th", {}, "施策名"), el("th", {}, "担当"), el("th", {}, "種別"), el("th", {}, "取得"), el("th", {}, "郵便割合"), el("th", {}, "件数"), el("th", {}, "正式名（編集可）"));
+      const thr = el("tr", {}, el("th", {}, ""), el("th", {}, "No."), el("th", {}, "施策名"), el("th", {}, "担当"), el("th", {}, "種別"), el("th", {}, "取得"), el("th", {}, "郵便割合"), el("th", {}, "P3/List"), el("th", {}, "優先"), el("th", {}, "件数"), el("th", {}, "正式名（編集可）"));
       table.append(el("thead", {}, thr));
       const tb = el("tbody", {});
-      rows.forEach(m => {
-        tb.append(crossMonthRow(month, m));
+      rows.forEach((m, i) => {
+        tb.append(crossMonthRow(month, m, i + 1));
         if (state.crossExpanded[month + ":" + m.id]) tb.append(crossMonthDetail(month, m));
       });
       table.append(tb);
