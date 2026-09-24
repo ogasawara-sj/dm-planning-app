@@ -1799,19 +1799,43 @@
     pts.forEach(p => { const x = Math.round(xOf(range, p.mn)); if (!map.has(x)) map.set(x, []); map.get(x).push(p); });
     return [...map.values()];
   }
+  // ラベルの見た目上の横幅を実測し、隣り合う日（＝別クラスタ）同士でもラベル同士が重ならないよう
+  // 段（tier）を振り分ける。同じ日の重なりはclusterPtsByXで丸ごとまとめ済みなので、ここでは
+  // 「別の日だが横に近すぎてラベルの文字が衝突する」ケースを対象にする
+  let __labelCtx = null;
+  function labelPixelWidth(text) {
+    if (!__labelCtx) __labelCtx = document.createElement("canvas").getContext("2d");
+    __labelCtx.font = "9.5px 'Inter','Noto Sans JP',sans-serif";
+    return __labelCtx.measureText(text).width;
+  }
+  const TIER_H = 23;   // ラベル1段分の高さ（本文+日付の2行ぶん）
+  function layoutClusters(pts, range) {
+    const clusters = clusterPtsByX(pts, range).sort((a, b) => xOf(range, a[0].mn) - xOf(range, b[0].mn));
+    const tierRight = [];
+    return clusters.map(cluster => {
+      const first = cluster[0];
+      const x = xOf(range, first.mn);
+      const labelText = cluster.length === 1 ? first.label : `${first.label} 他${cluster.length - 1}件`;
+      const half = labelPixelWidth(labelText) / 2 + 6;
+      let tier = 0;
+      while (tierRight[tier] != null && x - half < tierRight[tier]) tier++;
+      tierRight[tier] = x + half;
+      return { cluster, x, labelText, tier };
+    });
+  }
   function ganttPoints(pts, range, view, g, m) {
     const nodes = [];
     if (!pts.length) return nodes;
     const a = Math.min(...pts.map(p => xOf(range, p.mn))), b = Math.max(...pts.map(p => xOf(range, p.mx)));
     nodes.push(el("div", { class: "sg-conn", style: `left:${a}px;width:${b - a}px` }));
-    clusterPtsByX(pts, range).forEach(cluster => {
+    layoutClusters(pts, range).forEach(({ cluster, x, labelText, tier }) => {
       cluster.forEach((p, idx) => {
-        const x = xOf(range, p.mn), x2 = xOf(range, p.mx);
-        if (!m && x2 > x) nodes.push(el("div", { class: "sg-span", style: `left:${x}px;width:${x2 - x}px` }));
+        const px = xOf(range, p.mn), x2 = xOf(range, p.mx);
+        if (!m && x2 > px) nodes.push(el("div", { class: "sg-span", style: `left:${px}px;width:${x2 - px}px` }));
         const key = p.custom ? ("custom:" + p.custom.id) : noteKeyFor(view, g, m, p.i);
         const note = getNote(key);
         const top = 6 + idx * 16;
-        const dotEl = el("div", { class: "sg-ms " + p.st + (p.custom ? " custom" : ""), style: `left:${x - 9.5}px;top:${top}px`,
+        const dotEl = el("div", { class: "sg-ms " + p.st + (p.custom ? " custom" : ""), style: `left:${px - 9.5}px;top:${top}px`,
           title: `${p.label}（${p.mn !== p.mx ? fmtMD(p.mn) + "〜" + fmtMD(p.mx) : fmtMD(p.mn)}）` + (note ? "\nメモ：" + note : "") });
         if (p.st === "done") dotEl.append(icon("check"));
         else if (p.st === "late") dotEl.append(icon("exclamation-mark"));
@@ -1822,9 +1846,7 @@
       });
       // ラベルはクラスタにつき1つ（2件目以降は「他◯件」とまとめる。各丸自体はホバーで個別の名前が見える）
       const first = cluster[0];
-      const x = xOf(range, first.mn);
-      const labelTop = 6 + cluster.length * 16 + 5;
-      const labelText = cluster.length === 1 ? first.label : `${first.label} 他${cluster.length - 1}件`;
+      const labelTop = 6 + cluster.length * 16 + 5 + tier * TIER_H;
       const worstSt = cluster.some(p => p.st === "late") ? "late" : (cluster.every(p => p.st === "done" || p.st === "fix") ? "done" : first.st);
       nodes.push(el("div", { class: "sg-mslab " + worstSt, style: `left:${x}px;top:${labelTop}px` }, labelText,
         el("span", { class: "sg-dt" }, first.mn !== first.mx ? fmtMD(first.mn) + "〜" + fmtMD(first.mx) : fmtMD(first.mn))));
@@ -1867,8 +1889,11 @@
   }
   // 同じ日に工程が複数重なる行は、縦に積む分だけ高さを広げる（重ならないように）
   function growRowForClusters(tr, pts, range, base) {
-    const maxCluster = clusterPtsByX(pts, range).reduce((mx, c) => Math.max(mx, c.length), 1);
-    if (maxCluster > 1) tr.style.height = (base + (maxCluster - 1) * 16 + 14) + "px";
+    const layout = layoutClusters(pts, range);
+    const maxCluster = layout.reduce((mx, l) => Math.max(mx, l.cluster.length), 1);
+    const maxTier = layout.reduce((mx, l) => Math.max(mx, l.tier), 0);
+    const extra = (maxCluster - 1) * 16 + maxTier * TIER_H;
+    if (extra > 0) tr.style.height = (base + extra + 14) + "px";
   }
   // 縦線（データ入稿日／共通マイルストーン）をドラッグして日付を動かせるようにする。タグをつかんで左右に動かす。
   function wireMilestoneDrag(tagEl, lineEl, refTrack, getDate, setDate, labelPrefix) {
