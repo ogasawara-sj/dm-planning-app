@@ -2277,13 +2277,15 @@
       try { diskRaw = await S.readMonth(state.month); } catch (e) {}
       const disk = diskRaw ? normalize(diskRaw) : state.model;
       const merged = mergeModels(state.baseline || state.model, state.model, disk);
+      // 自分の変更だけなら（他の人の更新が混ざっていないなら）画面は再描画しない＝入力中の再描画でカーソルが飛ぶのを防ぐ
+      const importedOthers = JSON.stringify(merged) !== JSON.stringify(state.model);
       await S.writeMonth(state.month, merged);
       state.model = merged;
       state.mtime = await S.monthMtime(state.month);
       state.baseline = JSON.parse(JSON.stringify(merged));
       saving = false; state.saveError = ""; state.dirty = false; updateSavedAt();
       clearTimeout(retryTimer);
-      rerender();   // mergeで行の参照が入れ替わることがあるため、編集中の入力欄が古い参照を掴んだままにならないよう反映
+      if (importedOthers) rerender();   // 他の人の更新が混ざった時だけ、古い行参照を掴んだままにならないよう反映
     } catch (e) {
       // 書き込み失敗：保存済み扱いにしない。理由を画面に出す。同時アクセスが多いと起きやすい一時的な競合を想定し、数秒後に自動で再試行する
       saving = false; state.saveError = (e && e.message) ? e.message : String(e); updateSavedAt();
