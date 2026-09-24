@@ -18,6 +18,7 @@
     tab: "list", schedOpen: {},
     crossMonth: {},   // 施策名フィルター中に表示する過去月の比較データ（{month: {model,dirty,saving,timer}|null}）
     crossExpanded: {},   // 過去月比較の展開状態（キー："month:id"）
+    moveLinesTogether: false,   // ONの間は縦線(データ入稿日・各共通線)をドラッグすると全部まとめて動く
     baseline: null,   // 読み込み・直前の保存成功時点のスナップショット（保存時の3-way mergeの基準）
   };
   const cf = { data: [], cards: [], dots: [], sel: 0, dragMode: false, opening: false };
@@ -1426,20 +1427,24 @@
   // 手動でドラッグして直した項目だけを model.schedule.overrides に差分保存する（他は毎回再計算＝保存しない）。
   const SCHED = {
     design: {
-      steps: ["RO決定", "企画連携", "オリエン", "初校", "2校", "校了", "入稿"],
-      owners: ["CRM", "CRM", "デザイン", "デザイン", "デザイン", "CRM", "デザイン"],
+      steps: ["RO決定", "企画連携", "オリエン", "入稿"],
+      owners: ["CRM", "CRM", "デザイン", "デザイン"],
       // 企画連携〜入稿はデータ入稿日からの逆算日数（実データより算出。個別事情はドラッグで調整）。
       // RO決定は下のspecialDatesで「毎月◯日（土日は前倒し）」を優先する
-      offsets: [null, 52, 51, 49, 46, 38, 0],
+      offsets: [null, 52, 51, 0],
       specialDates: {
         0: { day: 24, monthsBefore: 2 },    // RO決定：発送月の2か月前・24日
       },
       gateIndex: 1,   // 企画連携チェック（鍵）の対象ステップ
       // 全施策共通の縦線（施策ごとの丸ではなく、データ入稿日と同じ見た目で1本だけ表示。ドラッグで日付変更可）
+      // 初校・2校・校了は「ざっくり全体感が分かれば良い」との要望で施策ごとの丸をやめ、他と同じ共通線に統一（offsetはデータ入稿日からの逆算日数）
       commonLines: [
         { key: "basicInfo", label: "基本情報入力", labelLines: ["基本情報入力", "QR作成", "価格表作成"], color: "#7c3aed", day: 11, monthsBefore: 2 },
         { key: "qrLink", label: "QR紐づけ完了日", color: "#c2410c", day: 18, monthsBefore: 2 },
         { key: "kuroshio", label: "KUROSHIO登録完了日", color: "#15803d", day: 20, monthsBefore: 1 },
+        { key: "firstProof", label: "初校", color: "#0891b2", offset: 49 },
+        { key: "secondProof", label: "2校", color: "#b45309", offset: 46 },
+        { key: "finalProof", label: "校了", color: "#be123c", offset: 38 },
       ],
       axisField: "designAxis", axisLabel: "データ入稿日",
       gateItems: ["PMとの確認", "PMからの訴求優先度", "過去施策からの設計根拠", "表現の法務確認", "価格・CTAの他チャネル整合"],
@@ -1561,13 +1566,20 @@
   }
   // 全施策共通の縦線（QR紐づけ完了日・KUROSHIO登録完了日など）：施策ごとではなく月に1つの日付
   function milestoneKey(view, key) { return "milestone:" + view + ":" + key; }
-  function milestoneAutoDate(ml) {
+  // ml.offsetがある場合（初校・2校・校了など）はデータ入稿日からの逆算日数、無ければ従来通り「発送月のNか月前のD日」
+  function milestoneAutoDate(view, ml) {
+    if (ml.offset != null) {
+      const axis = state.model[SCHED[view].axisField];
+      if (!axis) return "";
+      if (ml.offset === 0) return axis;
+      return prevBizDay(addDaysISO(axis, -ml.offset));
+    }
     if (!state.month) return "";
     return bizDayOnOrBefore(monthsBeforeYYYYMM(state.month, ml.monthsBefore), ml.day);
   }
-  function milestoneDate(view, ml) { const ov = schedStore().overrides[milestoneKey(view, ml.key)]; return ov || milestoneAutoDate(ml); }
+  function milestoneDate(view, ml) { const ov = schedStore().overrides[milestoneKey(view, ml.key)]; return ov || milestoneAutoDate(view, ml); }
   function setMilestoneDate(view, ml, iso) {
-    const auto = milestoneAutoDate(ml);
+    const auto = milestoneAutoDate(view, ml);
     if (iso === auto) delete schedStore().overrides[milestoneKey(view, ml.key)];
     else schedStore().overrides[milestoneKey(view, ml.key)] = iso;
   }
@@ -1803,11 +1815,13 @@
   // 段（tier）を振り分ける。同じ日の重なりはclusterPtsByXで丸ごとまとめ済みなので、ここでは
   // 「別の日だが横に近すぎてラベルの文字が衝突する」ケースを対象にする
   let __labelCtx = null;
-  function labelPixelWidth(text) {
+  function measureTextWidth(text, font) {
     if (!__labelCtx) __labelCtx = document.createElement("canvas").getContext("2d");
-    __labelCtx.font = "9.5px 'Inter','Noto Sans JP',sans-serif";
+    __labelCtx.font = font;
     return __labelCtx.measureText(text).width;
   }
+  function labelPixelWidth(text) { return measureTextWidth(text, "9.5px 'Inter','Noto Sans JP',sans-serif"); }
+  function tagPixelWidth(text) { return measureTextWidth(text, "700 9.5px 'Inter','Noto Sans JP',sans-serif"); }
   const TIER_H = 23;   // ラベル1段分の高さ（本文+日付の2行ぶん）
   function layoutClusters(pts, range) {
     const clusters = clusterPtsByX(pts, range).sort((a, b) => xOf(range, a[0].mn) - xOf(range, b[0].mn));
@@ -1896,55 +1910,90 @@
     if (extra > 0) tr.style.height = (base + extra + 14) + "px";
   }
   // 縦線（データ入稿日／共通マイルストーン）をドラッグして日付を動かせるようにする。タグをつかんで左右に動かす。
-  function wireMilestoneDrag(tagEl, lineEl, refTrack, getDate, setDate, labelPrefix) {
+  // state.moveLinesTogetherがONの時は、掴んだ線だけでなくallLinesに含まれる全ての線を同じ日数ぶん一緒に動かす
+  // （線ごとに現在バラバラな日付でも、それぞれの相対的なズレは保ったまま全体をまとめてスライドできる）
+  function wireMilestoneDrag(tagEl, lineEl, refTrack, getDate, setDate, allLines) {
     if (!state.editing || !refTrack) { tagEl.style.cursor = "default"; return; }
     tagEl.style.cursor = "grab";
     tagEl.addEventListener("mousedown", e => {
       if (e.button !== 0) return;
       e.preventDefault(); e.stopPropagation();
+      const together = state.moveLinesTogether && allLines && allLines.length > 1;
+      const targets = together ? allLines : [{ tagEl, lineEl, getDate, setDate }];
+      // ドラッグ開始前の各線の日付をここで確定しておく（1本ずつ確定させると、先に動かした線の新しい日付を
+      // 基準に次の線が計算されてしまい、2重にズレる。全部「開始時点の値＋同じ日数」で計算する）
+      const beforeDates = targets.map(t => t.getDate());
       const startDate = fallbackDateAtX(refTrack, e.clientX);
-      const baseLineLeft = parseFloat(lineEl.style.left), baseTagLeft = parseFloat(tagEl.style.left);
+      const bases = targets.map(t => ({ line: parseFloat(t.lineEl.style.left), tag: parseFloat(t.tagEl.style.left) }));
       let days = 0;
-      tagEl.classList.add("drag");
+      targets.forEach(t => t.tagEl.classList.add("drag"));
       function mv(ev) {
         days = diffDaysISO(startDate, fallbackDateAtX(refTrack, ev.clientX));
-        lineEl.style.left = (baseLineLeft + days * CW) + "px";
-        tagEl.style.left = (baseTagLeft + days * CW) + "px";
+        targets.forEach((t, idx) => {
+          t.lineEl.style.left = (bases[idx].line + days * CW) + "px";
+          t.tagEl.style.left = (bases[idx].tag + days * CW) + "px";
+        });
       }
       function up() {
         document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up);
-        tagEl.classList.remove("drag");
-        if (days !== 0) { setDate(addDaysISO(getDate(), days)); markDirty(); }
+        targets.forEach(t => t.tagEl.classList.remove("drag"));
+        if (days !== 0) { targets.forEach((t, idx) => t.setDate(addDaysISO(beforeDates[idx], days))); markDirty(); }
         renderScheduleBoard();
       }
       document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up);
     });
   }
   function addOverlayLines(cal, cfg, range, view, refTrack) {
+    // 共通線が増える（初校/2校/校了を含む）と、日付が近い時にタグ同士が上端で重なるため、
+    // 実測幅を見て段（tier）に振り分けてから配置する（.sg-mslabの重なり対策と同じ考え方）
+    const specs = [];
     const axis = state.model[cfg.axisField];
     if (axis && diffDaysISO(range.from, axis) >= 0) {
-      const x = LBL + xOf(range, axis);
-      const line = el("div", { class: "sg-axisline", style: `left:${x}px` });
-      const tag = el("div", { class: "sg-axistag", style: `left:${x}px` }, cfg.axisLabel + " " + fmtMD(axis));
-      cal.append(line, tag);
-      wireMilestoneDrag(tag, line, refTrack, () => state.model[cfg.axisField], d => { state.model[cfg.axisField] = d; });
+      specs.push({ x: LBL + xOf(range, axis), text: cfg.axisLabel + " " + fmtMD(axis), axis: true });
     }
     (cfg.commonLines || []).forEach(ml => {
       const date = milestoneDate(view, ml); if (!date) return;
-      const x = LBL + xOf(range, date);
-      const line = el("div", { class: "sg-axisline", style: `left:${x}px;border-left-color:${ml.color}` });
-      const tag = el("div", { class: "sg-axistag" + (ml.labelLines ? " multi" : ""), style: `left:${x}px;background:${ml.color}` });
+      const text = ml.labelLines ? ml.labelLines[ml.labelLines.length - 1] + " " + fmtMD(date) : `${ml.label} ${fmtMD(date)}`;
+      const widest = ml.labelLines ? Math.max(...ml.labelLines.map((l, i) => tagPixelWidth(i === ml.labelLines.length - 1 ? l + " " + fmtMD(date) : l))) : tagPixelWidth(text);
+      specs.push({ x: LBL + xOf(range, date), text, ml, date, widest });
+    });
+    const tierRight = [];
+    specs.forEach(sp => {
+      const w = (sp.widest != null ? sp.widest : tagPixelWidth(sp.text)) + 12;
+      const half = w / 2 + 4;
+      let tier = 0;
+      while (tierRight[tier] != null && sp.x - half < tierRight[tier]) tier++;
+      tierRight[tier] = sp.x + half;
+      sp.tier = tier;
+    });
+    const maxTier = specs.reduce((mx, s) => Math.max(mx, s.tier), 0);
+    const TAG_TIER_H = 20;
+    cal.style.paddingTop = (54 + maxTier * TAG_TIER_H) + "px";
+    const lineDefs = [];
+    specs.forEach(sp => {
+      const top = 2 + sp.tier * TAG_TIER_H;
+      if (sp.axis) {
+        const line = el("div", { class: "sg-axisline", style: `left:${sp.x}px` });
+        const tag = el("div", { class: "sg-axistag", style: `left:${sp.x}px;top:${top}px` }, sp.text);
+        cal.append(line, tag);
+        lineDefs.push({ tagEl: tag, lineEl: line, getDate: () => state.model[cfg.axisField], setDate: d => { state.model[cfg.axisField] = d; } });
+        return;
+      }
+      const ml = sp.ml;
+      const line = el("div", { class: "sg-axisline", style: `left:${sp.x}px;border-left-color:${ml.color}` });
+      const tag = el("div", { class: "sg-axistag" + (ml.labelLines ? " multi" : ""), style: `left:${sp.x}px;top:${top}px;background:${ml.color}` });
       if (ml.labelLines) {
         ml.labelLines.forEach((line2, i) => {
           if (i > 0) tag.append(el("br", {}));
-          tag.append(document.createTextNode(i === ml.labelLines.length - 1 ? `${line2} ${fmtMD(date)}` : line2));
+          tag.append(document.createTextNode(i === ml.labelLines.length - 1 ? `${line2} ${fmtMD(sp.date)}` : line2));
         });
       } else {
-        tag.append(document.createTextNode(`${ml.label} ${fmtMD(date)}`));
+        tag.append(document.createTextNode(sp.text));
       }
       cal.append(line, tag);
-      wireMilestoneDrag(tag, line, refTrack, () => milestoneDate(view, ml), d => setMilestoneDate(view, ml, d));
+      lineDefs.push({ tagEl: tag, lineEl: line, getDate: () => milestoneDate(view, ml), setDate: d => setMilestoneDate(view, ml, d) });
     });
+    lineDefs.forEach(ld => wireMilestoneDrag(ld.tagEl, ld.lineEl, refTrack, ld.getDate, ld.setDate, lineDefs));
     const t = todayISO(), tx = LBL + xOf(range, t);
     cal.append(el("div", { class: "sg-todayline", style: `left:${tx - 1.5}px` }));
     cal.append(el("div", { class: "sg-todaytag", style: `left:${tx}px` }, "今日"));
@@ -2000,6 +2049,12 @@
     const pastBtn = el("button", { class: "btn small ghost", title: "今日より前の日付で、まだ完了になっていない工程をまとめて完了（☑）にします" }, "☑ 今日より前を完了に");
     pastBtn.addEventListener("click", markAllPastDone);
     controls.append(pastBtn);
+    if ((cfg.commonLines || []).length) {
+      const togetherBtn = el("button", { class: "btn small toggle" + (state.moveLinesTogether ? " on" : ""), title: "ONの間は、縦線（データ入稿日・各共通線）をどれか1本ドラッグすると、他の線も同じ日数ぶん一緒に動きます（線ごとの日付のズレはそのまま保たれます）" },
+        icon(state.moveLinesTogether ? "link" : "link-off"), " まとめて動かす");
+      togetherBtn.addEventListener("click", () => { state.moveLinesTogether = !state.moveLinesTogether; renderScheduleBoard(); });
+      controls.append(togetherBtn);
+    }
     root.append(controls);
 
     if (!groups.length) { root.append(el("div", { class: "placeholder" }, "「施策一覧」タブで施策名を入力すると、ここにスケジュールが表示されます。")); return; }
