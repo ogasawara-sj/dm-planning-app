@@ -1427,26 +1427,35 @@
   // 手動でドラッグして直した項目だけを model.schedule.overrides に差分保存する（他は毎回再計算＝保存しない）。
   const SCHED = {
     design: {
-      steps: ["RO決定", "企画連携", "オリエン", "入稿"],
-      owners: ["CRM", "CRM", "デザイン", "デザイン"],
-      // 企画連携〜入稿はデータ入稿日からの逆算日数（実データより算出。個別事情はドラッグで調整）。
-      // RO決定は下のspecialDatesで「毎月◯日（土日は前倒し）」を優先する
-      offsets: [null, 52, 51, 0],
+      // オリエンは削除。基本情報入力・QR紐づけ・KUROSHIO登録完了日・初校・2校・校了は、
+      // 「ざっくり全体感が分かる共通線」と「施策ごとに個別調整できる丸」を両方持たせるため、
+      // 通常のstepsに戻しつつ、下のcommonLinesから同じstepIndexを指す形で線を重ねて表示する。
+      steps: ["RO決定", "企画連携", "基本情報入力", "QR紐づけ", "KUROSHIO登録完了日", "初校", "2校", "校了", "入稿"],
+      owners: ["CRM", "CRM", "デザイン", "デザイン", "デザイン", "デザイン", "デザイン", "CRM", "デザイン"],
+      // データ入稿日からの逆算日数（実データより算出。個別事情はドラッグで調整）。
+      // RO決定・基本情報入力・QR紐づけ・KUROSHIO登録完了日は下のspecialDatesで「毎月◯日」を優先する
+      offsets: [null, 52, null, null, null, 49, 46, 38, 0],
       specialDates: {
         0: { day: 24, monthsBefore: 2 },    // RO決定：発送月の2か月前・24日
+        2: { day: 11, monthsBefore: 2 },    // 基本情報入力
+        3: { day: 18, monthsBefore: 2 },    // QR紐づけ
+        4: { day: 20, monthsBefore: 1 },    // KUROSHIO登録完了日
       },
       gateIndex: 1,   // 企画連携チェック（鍵）の対象ステップ
-      // 全施策共通の縦線（施策ごとの丸ではなく、データ入稿日と同じ見た目で1本だけ表示。ドラッグで日付変更可）
-      // 初校・2校・校了は「ざっくり全体感が分かれば良い」との要望で施策ごとの丸をやめ、他と同じ共通線に統一（offsetはデータ入稿日からの逆算日数）
+      // 全施策共通の縦線：対応するstepIndexの「一番早い施策の日付」を線の位置として表示し、
+      // 線をドラッグするとそのステップの全施策名グループの日付を同じ日数ぶん一括シフトする
+      // （施策ごとの丸は個別にも動かせる。まとめて動かす、との併用も可）
       commonLines: [
-        { key: "basicInfo", label: "基本情報入力", labelLines: ["基本情報入力", "QR作成", "価格表作成"], color: "#7c3aed", day: 11, monthsBefore: 2 },
-        { key: "qrLink", label: "QR紐づけ完了日", color: "#c2410c", day: 18, monthsBefore: 2 },
-        { key: "kuroshio", label: "KUROSHIO登録完了日", color: "#15803d", day: 20, monthsBefore: 1 },
-        { key: "firstProof", label: "初校", color: "#0891b2", offset: 49 },
-        { key: "secondProof", label: "2校", color: "#b45309", offset: 46 },
-        { key: "finalProof", label: "校了", color: "#be123c", offset: 38 },
+        { key: "roDecide", stepIndex: 0, label: "RO決定", color: "#7c3aed" },
+        { key: "kikaku", stepIndex: 1, label: "企画連携", color: "#7c3aed" },
+        { key: "basicInfo", stepIndex: 2, label: "基本情報入力", color: "#7c3aed" },
+        { key: "qrLink", stepIndex: 3, label: "QR紐づけ", color: "#7c3aed" },
+        { key: "kuroshio", stepIndex: 4, label: "KUROSHIO登録完了日", color: "#15803d" },
+        { key: "firstProof", stepIndex: 5, label: "初校", color: "#0891b2" },
+        { key: "secondProof", stepIndex: 6, label: "2校", color: "#0891b2" },
+        { key: "finalProof", stepIndex: 7, label: "校了", color: "#0891b2" },
       ],
-      axisField: "designAxis", axisLabel: "データ入稿日",
+      axisField: "designAxis", axisLabel: "データ入稿日", axisColor: "#0891b2",
       gateItems: ["PMとの確認", "PMからの訴求優先度", "過去施策からの設計根拠", "表現の法務確認", "価格・CTAの他チャネル整合"],
     },
     tci: {
@@ -1564,6 +1573,22 @@
     else schedStore().overrides[stepKey(m, view, i)] = iso;
     setStepDone(view, m, i, false);   // 日付を動かしたら未完了に戻す
   }
+  // 全施策共通の縦線（あるステップの「一番早い施策の日付」を代表値として表示）。
+  // 線をドラッグすると、そのステップの全施策名グループの日付を同じ日数ぶん一括シフトする
+  // （施策ごとに既にバラつきがあっても、それぞれの相対的なズレは保ったまま全体をスライドできる）
+  function stepLineDate(view, i) {
+    const dates = scheduleGroups().map(g => stepDate(view, g.children[0], i)).filter(Boolean).sort();
+    return dates.length ? dates[0] : "";
+  }
+  function setStepLineDate(view, i, newDate) {
+    const cur = stepLineDate(view, i); if (!cur) return;
+    const delta = diffDaysISO(cur, newDate); if (!delta) return;
+    scheduleGroups().forEach(g => {
+      const m = g.children[0];
+      const d = stepDate(view, m, i);
+      if (d) setStepOverride(view, m, i, addDaysISO(d, delta));
+    });
+  }
   // 全施策共通の縦線（QR紐づけ完了日・KUROSHIO登録完了日など）：施策ごとではなく月に1つの日付
   function milestoneKey(view, key) { return "milestone:" + view + ":" + key; }
   // ml.offsetがある場合（初校・2校・校了など）はデータ入稿日からの逆算日数、無ければ従来通り「発送月のNか月前のD日」
@@ -1624,7 +1649,6 @@
     if (stepDone(view, m, i)) return "done";
     const d = stepDate(view, m, i); if (!d) return null;
     if (diffDaysISO(d, todayISO()) > 0) return "late";
-    if (view === "design" && i < 2) return "brief";
     return "plan";
   }
   function customVisualState(c) {
@@ -1944,18 +1968,18 @@
     });
   }
   function addOverlayLines(cal, cfg, range, view, refTrack) {
-    // 共通線が増える（初校/2校/校了を含む）と、日付が近い時にタグ同士が上端で重なるため、
+    // 共通線が増えると、日付が近い時にタグ同士が上端で重なるため、
     // 実測幅を見て段（tier）に振り分けてから配置する（.sg-mslabの重なり対策と同じ考え方）
     const specs = [];
     const axis = state.model[cfg.axisField];
     if (axis && diffDaysISO(range.from, axis) >= 0) {
-      specs.push({ x: LBL + xOf(range, axis), text: cfg.axisLabel + " " + fmtMD(axis), axis: true });
+      specs.push({ x: LBL + xOf(range, axis), text: cfg.axisLabel + " " + fmtMD(axis), axis: true, color: cfg.axisColor });
     }
     (cfg.commonLines || []).forEach(ml => {
-      const date = milestoneDate(view, ml); if (!date) return;
-      const text = ml.labelLines ? ml.labelLines[ml.labelLines.length - 1] + " " + fmtMD(date) : `${ml.label} ${fmtMD(date)}`;
-      const widest = ml.labelLines ? Math.max(...ml.labelLines.map((l, i) => tagPixelWidth(i === ml.labelLines.length - 1 ? l + " " + fmtMD(date) : l))) : tagPixelWidth(text);
-      specs.push({ x: LBL + xOf(range, date), text, ml, date, widest });
+      const date = ml.stepIndex != null ? stepLineDate(view, ml.stepIndex) : milestoneDate(view, ml);
+      if (!date) return;
+      const text = `${ml.label} ${fmtMD(date)}`;
+      specs.push({ x: LBL + xOf(range, date), text, ml, date, widest: tagPixelWidth(text) });
     });
     const tierRight = [];
     specs.forEach(sp => {
@@ -1973,25 +1997,19 @@
     specs.forEach(sp => {
       const top = 2 + sp.tier * TAG_TIER_H;
       if (sp.axis) {
-        const line = el("div", { class: "sg-axisline", style: `left:${sp.x}px` });
-        const tag = el("div", { class: "sg-axistag", style: `left:${sp.x}px;top:${top}px` }, sp.text);
+        const line = el("div", { class: "sg-axisline", style: `left:${sp.x}px` + (sp.color ? `;border-left-color:${sp.color}` : "") });
+        const tag = el("div", { class: "sg-axistag", style: `left:${sp.x}px;top:${top}px` + (sp.color ? `;background:${sp.color}` : "") }, sp.text);
         cal.append(line, tag);
         lineDefs.push({ tagEl: tag, lineEl: line, getDate: () => state.model[cfg.axisField], setDate: d => { state.model[cfg.axisField] = d; } });
         return;
       }
       const ml = sp.ml;
       const line = el("div", { class: "sg-axisline", style: `left:${sp.x}px;border-left-color:${ml.color}` });
-      const tag = el("div", { class: "sg-axistag" + (ml.labelLines ? " multi" : ""), style: `left:${sp.x}px;top:${top}px;background:${ml.color}` });
-      if (ml.labelLines) {
-        ml.labelLines.forEach((line2, i) => {
-          if (i > 0) tag.append(el("br", {}));
-          tag.append(document.createTextNode(i === ml.labelLines.length - 1 ? `${line2} ${fmtMD(sp.date)}` : line2));
-        });
-      } else {
-        tag.append(document.createTextNode(sp.text));
-      }
+      const tag = el("div", { class: "sg-axistag", style: `left:${sp.x}px;top:${top}px;background:${ml.color}` }, sp.text);
       cal.append(line, tag);
-      lineDefs.push({ tagEl: tag, lineEl: line, getDate: () => milestoneDate(view, ml), setDate: d => setMilestoneDate(view, ml, d) });
+      const getDate = ml.stepIndex != null ? (() => stepLineDate(view, ml.stepIndex)) : (() => milestoneDate(view, ml));
+      const setDate = ml.stepIndex != null ? (d => setStepLineDate(view, ml.stepIndex, d)) : (d => setMilestoneDate(view, ml, d));
+      lineDefs.push({ tagEl: tag, lineEl: line, getDate, setDate });
     });
     lineDefs.forEach(ld => wireMilestoneDrag(ld.tagEl, ld.lineEl, refTrack, ld.getDate, ld.setDate, lineDefs));
     const t = todayISO(), tx = LBL + xOf(range, t);
@@ -2042,8 +2060,10 @@
     axisInp.addEventListener("change", () => { if (!state.editing) { axisInp.value = state.model[cfg.axisField] || ""; blockEdit(); return; } state.model[cfg.axisField] = axisInp.value; markDirty(); renderScheduleBoard(); });
     controls.append(el("label", { class: "sg-field" }, cfg.axisLabel, axisInp));
     (cfg.commonLines || []).forEach(ml => {
-      const mlInp = el("input", { type: "date", value: milestoneDate(view, ml) || "" });
-      mlInp.addEventListener("change", () => { if (!state.editing) { mlInp.value = milestoneDate(view, ml) || ""; blockEdit(); return; } setMilestoneDate(view, ml, mlInp.value); markDirty(); renderScheduleBoard(); });
+      const getD = ml.stepIndex != null ? (() => stepLineDate(view, ml.stepIndex)) : (() => milestoneDate(view, ml));
+      const setD = ml.stepIndex != null ? (d => setStepLineDate(view, ml.stepIndex, d)) : (d => setMilestoneDate(view, ml, d));
+      const mlInp = el("input", { type: "date", value: getD() || "" });
+      mlInp.addEventListener("change", () => { if (!state.editing) { mlInp.value = getD() || ""; blockEdit(); return; } setD(mlInp.value); markDirty(); renderScheduleBoard(); });
       controls.append(el("label", { class: "sg-field" }, ml.label, mlInp));
     });
     const pastBtn = el("button", { class: "btn small ghost", title: "今日より前の日付で、まだ完了になっていない工程をまとめて完了（☑）にします" }, "☑ 今日より前を完了に");
@@ -2065,13 +2085,12 @@
     const legend = el("div", { class: "sg-legend" });
     if (view === "design") {
       legend.append(el("span", {}, el("span", { class: "sg-dot", style: "background:#9aa3b2" }), "企画連携チェック未完了"));
-      legend.append(el("span", {}, el("span", { class: "sg-dot", style: "background:#0f9c74" }), "オリエン"));
     }
     legend.append(
       el("span", {}, el("span", { class: "sg-dot", style: "background:#3fae62" }), "完了"),
       el("span", {}, el("span", { class: "sg-dot", style: "background:#e5484d" }), "遅延"),
       el("span", {}, el("span", { class: "sg-dot", style: "background:#a78bfa" }), "予定"),
-      el("span", {}, el("span", { class: "sg-vl", style: "background:#2563eb" }), cfg.axisLabel + "（全施策共通）"),
+      el("span", {}, el("span", { class: "sg-vl", style: "background:" + (cfg.axisColor || "#2563eb") }), cfg.axisLabel + "（全施策共通）"),
       el("span", {}, el("span", { class: "sg-vl", style: "background:#e0761a" }), "今日"));
     sec.append(legend);
 
