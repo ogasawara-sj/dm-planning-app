@@ -1448,7 +1448,7 @@
       commonLines: [
         { key: "roDecide", stepIndex: 0, label: "RO決定", color: "#7c3aed" },
         { key: "kikaku", stepIndex: 1, label: "企画連携", color: "#7c3aed" },
-        { key: "basicInfo", stepIndex: 2, label: "基本情報入力", color: "#7c3aed" },
+        { key: "basicInfo", stepIndex: 2, label: "基本情報入力", labelLines: ["基本情報入力", "QR作成", "価格表作成"], color: "#7c3aed" },
         { key: "qrLink", stepIndex: 3, label: "QR紐づけ", color: "#7c3aed" },
         { key: "kuroshio", stepIndex: 4, label: "KUROSHIO登録完了日", color: "#15803d" },
         { key: "firstProof", stepIndex: 5, label: "初校", color: "#0891b2" },
@@ -1828,16 +1828,9 @@
       document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up);
     });
   }
-  // 同じ日（同じx位置）に複数の工程が重なる場合、丸ごとに縦へ少しずつずらし、
-  // ラベルは重なって読めなくなるのを避けるため1つにまとめて表示する
-  function clusterPtsByX(pts, range) {
-    const map = new Map();
-    pts.forEach(p => { const x = Math.round(xOf(range, p.mn)); if (!map.has(x)) map.set(x, []); map.get(x).push(p); });
-    return [...map.values()];
-  }
-  // ラベルの見た目上の横幅を実測し、隣り合う日（＝別クラスタ）同士でもラベル同士が重ならないよう
-  // 段（tier）を振り分ける。同じ日の重なりはclusterPtsByXで丸ごとまとめ済みなので、ここでは
-  // 「別の日だが横に近すぎてラベルの文字が衝突する」ケースを対象にする
+  // ラベルの見た目上の横幅を実測し、近い（または同じ）日の工程同士でもラベルが重ならないよう
+  // 段（tier）を振り分ける。以前は同じ日の工程を「他N件」と1つにまとめていたが、工程の種類が
+  // 分からなくなるとの指摘があったため、1件ずつ個別の丸・ラベルとして表示しつつ段違いで避ける方式に変更
   let __labelCtx = null;
   function measureTextWidth(text, font) {
     if (!__labelCtx) __labelCtx = document.createElement("canvas").getContext("2d");
@@ -1846,19 +1839,18 @@
   }
   function labelPixelWidth(text) { return measureTextWidth(text, "9.5px 'Inter','Noto Sans JP',sans-serif"); }
   function tagPixelWidth(text) { return measureTextWidth(text, "700 9.5px 'Inter','Noto Sans JP',sans-serif"); }
-  const TIER_H = 23;   // ラベル1段分の高さ（本文+日付の2行ぶん）
-  function layoutClusters(pts, range) {
-    const clusters = clusterPtsByX(pts, range).sort((a, b) => xOf(range, a[0].mn) - xOf(range, b[0].mn));
+  const TIER_H = 23;   // 1段分の高さ（丸+ラベル2行ぶん）
+  function layoutPoints(pts, range) {
+    const sorted = pts.slice().sort((a, b) => xOf(range, a.mn) - xOf(range, b.mn));
     const tierRight = [];
-    return clusters.map(cluster => {
-      const first = cluster[0];
-      const x = xOf(range, first.mn);
-      const labelText = cluster.length === 1 ? first.label : `${first.label} 他${cluster.length - 1}件`;
-      const half = labelPixelWidth(labelText) / 2 + 6;
+    return sorted.map(p => {
+      const x = xOf(range, p.mn);
+      const dateText = p.mn !== p.mx ? fmtMD(p.mn) + "〜" + fmtMD(p.mx) : fmtMD(p.mn);
+      const half = labelPixelWidth(p.label + " " + dateText) / 2 + 6;
       let tier = 0;
       while (tierRight[tier] != null && x - half < tierRight[tier]) tier++;
       tierRight[tier] = x + half;
-      return { cluster, x, labelText, tier };
+      return { p, x, tier };
     });
   }
   function ganttPoints(pts, range, view, g, m) {
@@ -1866,28 +1858,25 @@
     if (!pts.length) return nodes;
     const a = Math.min(...pts.map(p => xOf(range, p.mn))), b = Math.max(...pts.map(p => xOf(range, p.mx)));
     nodes.push(el("div", { class: "sg-conn", style: `left:${a}px;width:${b - a}px` }));
-    layoutClusters(pts, range).forEach(({ cluster, x, labelText, tier }) => {
-      cluster.forEach((p, idx) => {
-        const px = xOf(range, p.mn), x2 = xOf(range, p.mx);
-        if (!m && x2 > px) nodes.push(el("div", { class: "sg-span", style: `left:${px}px;width:${x2 - px}px` }));
-        const key = p.custom ? ("custom:" + p.custom.id) : noteKeyFor(view, g, m, p.i);
-        const note = getNote(key);
-        const top = 6 + idx * 16;
-        const dotEl = el("div", { class: "sg-ms " + p.st + (p.custom ? " custom" : ""), style: `left:${px - 9.5}px;top:${top}px`,
-          title: `${p.label}（${p.mn !== p.mx ? fmtMD(p.mn) + "〜" + fmtMD(p.mx) : fmtMD(p.mn)}）` + (note ? "\nメモ：" + note : "") });
-        if (p.st === "done") dotEl.append(icon("check"));
-        else if (p.st === "late") dotEl.append(icon("exclamation-mark"));
-        else if (p.st === "lock") dotEl.append(icon("lock"));
-        if (note) dotEl.append(el("span", { class: "sg-notemk" }));
-        nodes.push(dotEl);
-        wireDot(dotEl, p, view, g, m);
-      });
-      // ラベルはクラスタにつき1つ（2件目以降は「他◯件」とまとめる。各丸自体はホバーで個別の名前が見える）
-      const first = cluster[0];
-      const labelTop = 6 + cluster.length * 16 + 5 + tier * TIER_H;
-      const worstSt = cluster.some(p => p.st === "late") ? "late" : (cluster.every(p => p.st === "done" || p.st === "fix") ? "done" : first.st);
-      nodes.push(el("div", { class: "sg-mslab " + worstSt, style: `left:${x}px;top:${labelTop}px` }, labelText,
-        el("span", { class: "sg-dt" }, first.mn !== first.mx ? fmtMD(first.mn) + "〜" + fmtMD(first.mx) : fmtMD(first.mn))));
+    layoutPoints(pts, range).forEach(({ p, x, tier }) => {
+      const px = xOf(range, p.mn), x2 = xOf(range, p.mx);
+      if (!m && x2 > px) nodes.push(el("div", { class: "sg-span", style: `left:${px}px;width:${x2 - px}px` }));
+      const key = p.custom ? ("custom:" + p.custom.id) : noteKeyFor(view, g, m, p.i);
+      const note = getNote(key);
+      const top = 6 + tier * TIER_H;
+      // 共通線と色を合わせた工程は、予定(plan)状態の時だけ丸もその色にする（遅延・完了・鍵は従来通りの状態色を優先）
+      const catStyle = (p.catColor && p.st === "plan") ? `;background:${p.catColor}` : "";
+      const dotEl = el("div", { class: "sg-ms " + p.st + (p.custom ? " custom" : ""), style: `left:${px - 9.5}px;top:${top}px${catStyle}`,
+        title: `${p.label}（${p.mn !== p.mx ? fmtMD(p.mn) + "〜" + fmtMD(p.mx) : fmtMD(p.mn)}）` + (note ? "\nメモ：" + note : "") });
+      if (p.st === "done") dotEl.append(icon("check"));
+      else if (p.st === "late") dotEl.append(icon("exclamation-mark"));
+      else if (p.st === "lock") dotEl.append(icon("lock"));
+      if (note) dotEl.append(el("span", { class: "sg-notemk" }));
+      nodes.push(dotEl);
+      wireDot(dotEl, p, view, g, m);
+      const labelTop = top + 21;
+      nodes.push(el("div", { class: "sg-mslab " + p.st, style: `left:${x}px;top:${labelTop}px` }, p.label,
+        el("span", { class: "sg-dt" }, p.mn !== p.mx ? fmtMD(p.mn) + "〜" + fmtMD(p.mx) : fmtMD(p.mn))));
     });
     return nodes;
   }
@@ -1917,7 +1906,8 @@
       else if (states.every(s => s === "done" || s === "fix")) st = states[0] === "fix" ? "fix" : "done";
       else if (states.includes("lock")) st = "lock";
       else st = states.includes("brief") ? "brief" : "plan";
-      pts.push({ i, label, mn: ds[0], mx: ds[ds.length - 1], st });
+      const cl = (cfg.commonLines || []).find(x => x.stepIndex === i);
+      pts.push({ i, label, mn: ds[0], mx: ds[ds.length - 1], st, catColor: cl ? cl.color : null });
     });
     customForRow(view, rowKey).forEach(c => pts.push({ label: c.label, mn: c.date, mx: c.date, st: customVisualState(c), custom: c }));
     growRowForClusters(tr, pts, range, 54);
@@ -1925,12 +1915,11 @@
     tr.append(track);
     return tr;
   }
-  // 同じ日に工程が複数重なる行は、縦に積む分だけ高さを広げる（重ならないように）
+  // 近い日・同じ日に工程が複数重なる行は、段の数だけ高さを広げる（重ならないように）
   function growRowForClusters(tr, pts, range, base) {
-    const layout = layoutClusters(pts, range);
-    const maxCluster = layout.reduce((mx, l) => Math.max(mx, l.cluster.length), 1);
+    const layout = layoutPoints(pts, range);
     const maxTier = layout.reduce((mx, l) => Math.max(mx, l.tier), 0);
-    const extra = (maxCluster - 1) * 16 + maxTier * TIER_H;
+    const extra = maxTier * TIER_H;
     if (extra > 0) tr.style.height = (base + extra + 14) + "px";
   }
   // 縦線（データ入稿日／共通マイルストーン）をドラッグして日付を動かせるようにする。タグをつかんで左右に動かす。
@@ -1978,8 +1967,9 @@
     (cfg.commonLines || []).forEach(ml => {
       const date = ml.stepIndex != null ? stepLineDate(view, ml.stepIndex) : milestoneDate(view, ml);
       if (!date) return;
-      const text = `${ml.label} ${fmtMD(date)}`;
-      specs.push({ x: LBL + xOf(range, date), text, ml, date, widest: tagPixelWidth(text) });
+      const text = ml.labelLines ? ml.labelLines[ml.labelLines.length - 1] + " " + fmtMD(date) : `${ml.label} ${fmtMD(date)}`;
+      const widest = ml.labelLines ? Math.max(...ml.labelLines.map((l, i) => tagPixelWidth(i === ml.labelLines.length - 1 ? l + " " + fmtMD(date) : l))) : tagPixelWidth(text);
+      specs.push({ x: LBL + xOf(range, date), text, ml, date, widest });
     });
     const tierRight = [];
     specs.forEach(sp => {
@@ -2005,7 +1995,15 @@
       }
       const ml = sp.ml;
       const line = el("div", { class: "sg-axisline", style: `left:${sp.x}px;border-left-color:${ml.color}` });
-      const tag = el("div", { class: "sg-axistag", style: `left:${sp.x}px;top:${top}px;background:${ml.color}` }, sp.text);
+      const tag = el("div", { class: "sg-axistag" + (ml.labelLines ? " multi" : ""), style: `left:${sp.x}px;top:${top}px;background:${ml.color}` });
+      if (ml.labelLines) {
+        ml.labelLines.forEach((line2, i) => {
+          if (i > 0) tag.append(el("br", {}));
+          tag.append(document.createTextNode(i === ml.labelLines.length - 1 ? `${line2} ${fmtMD(sp.date)}` : line2));
+        });
+      } else {
+        tag.append(document.createTextNode(sp.text));
+      }
       cal.append(line, tag);
       const getDate = ml.stepIndex != null ? (() => stepLineDate(view, ml.stepIndex)) : (() => milestoneDate(view, ml));
       const setDate = ml.stepIndex != null ? (d => setStepLineDate(view, ml.stepIndex, d)) : (d => setMilestoneDate(view, ml, d));
@@ -2055,17 +2053,8 @@
     const view = state.tab; const cfg = SCHED[view];
     const groups = scheduleGroups();
 
+    // 縦線（データ入稿日・各共通線）はドラッグで日付変更できるため、上部の日付入力欄の羅列は廃止（煩雑になるため）
     const controls = el("div", { class: "sg-controls" });
-    const axisInp = el("input", { type: "date", value: state.model[cfg.axisField] || "" });
-    axisInp.addEventListener("change", () => { if (!state.editing) { axisInp.value = state.model[cfg.axisField] || ""; blockEdit(); return; } state.model[cfg.axisField] = axisInp.value; markDirty(); renderScheduleBoard(); });
-    controls.append(el("label", { class: "sg-field" }, cfg.axisLabel, axisInp));
-    (cfg.commonLines || []).forEach(ml => {
-      const getD = ml.stepIndex != null ? (() => stepLineDate(view, ml.stepIndex)) : (() => milestoneDate(view, ml));
-      const setD = ml.stepIndex != null ? (d => setStepLineDate(view, ml.stepIndex, d)) : (d => setMilestoneDate(view, ml, d));
-      const mlInp = el("input", { type: "date", value: getD() || "" });
-      mlInp.addEventListener("change", () => { if (!state.editing) { mlInp.value = getD() || ""; blockEdit(); return; } setD(mlInp.value); markDirty(); renderScheduleBoard(); });
-      controls.append(el("label", { class: "sg-field" }, ml.label, mlInp));
-    });
     const pastBtn = el("button", { class: "btn small ghost", title: "今日より前の日付で、まだ完了になっていない工程をまとめて完了（☑）にします" }, "☑ 今日より前を完了に");
     pastBtn.addEventListener("click", markAllPastDone);
     controls.append(pastBtn);
