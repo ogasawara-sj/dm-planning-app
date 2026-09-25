@@ -1161,7 +1161,9 @@
     green: ["#1c8235", "#4c7a12", "#0a8562", "#367c17", "#248442"],
     other: ["#5642d6", "#a86c0c", "#5f6b78", "#7141c4"],
   };
-  const FIXED = { "お誕生日":["red",0], "TRS下取":["blue",0], "TRS下取り":["blue",0], "RAH買い替え":["green",0], "RAH買替":["green",0] };
+  // お誕生日RAHは名前に"RAH"を含むため本来はキーワード優先でgreenになるが、
+  // お誕生日DM系列として扱いたいとの要望のためredに固定
+  const FIXED = { "お誕生日":["red",0], "TRS下取":["blue",0], "TRS下取り":["blue",0], "RAH買い替え":["green",0], "RAH買替":["green",0], "お誕生日RAH":["red",1] };
   // キーワード優先：TRS→青、RAH→緑、（TRS/RAHが無く）お誕生日/誕生→赤、それ以外→other
   function familyOf(name) {
     if (name.indexOf("TRS") >= 0) return "blue";
