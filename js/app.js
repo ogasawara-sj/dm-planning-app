@@ -1635,6 +1635,12 @@
     if (view === "design") return !gateArrDone(groupGate(groupName));
     return false;   // リストスケジュール側は「依頼書格納」の鍵をやめ、他の工程と同じく自由に動かせるようにした
   }
+  // 企画連携ゲートの5項目が全てOK/不要になったら、その工程自体を自動で完了(緑チェック)にする。
+  // 逆に一度完了にした後でも項目を戻して未完了状態にした場合は、鍵がかかった状態に揃えるため完了も戻す。
+  function syncGateDone(view, g) {
+    const cfg = SCHED[view]; if (cfg.gateIndex == null) return;
+    setStepDone(view, g.children[0], cfg.gateIndex, gateArrDone(groupGate(g.name)));
+  }
 
   // 施策名グループを state.model.active から動的に生成（並び順＝企画サマリーと同じ表示順）
   function scheduleGroups() {
@@ -2030,6 +2036,7 @@
     const allOkBtn = el("button", { class: "sg-gatepop-b", title: "この5項目すべてをOKにする" }, "全てOK");
     allOkBtn.addEventListener("click", () => {
       for (let i = 0; i < arr.length; i++) arr[i] = "ok";
+      syncGateDone(view, g);
       markDirty(); closeColMenu(); renderScheduleBoard();
     });
     pop.append(el("div", { class: "sg-gatepop-h" }, el("span", {}, g.name + " 企画連携チェック"), allOkBtn));
@@ -2040,6 +2047,7 @@
         const b = el("button", { class: "sg-gatepop-b" + (on ? " on" : "") }, label);
         b.addEventListener("click", () => {
           arr[idx] = (arr[idx] === val) ? "" : val;
+          syncGateDone(view, g);
           markDirty(); closeColMenu(); renderScheduleBoard();
         });
         return b;
