@@ -1585,10 +1585,9 @@
   function setStepLineDate(view, i, newDate) {
     const cur = stepLineDate(view, i); if (!cur) return;
     const delta = diffDaysISO(cur, newDate); if (!delta) return;
-    const cfg = SCHED[view];
+    // 個別の丸のドラッグはロック中でも日付を動かせる仕様のため、共通線も同じく全グループを動かす
+    // （企画連携ゲートは「完了操作（クリック）」だけを塞ぐもので、日付の見込み調整までは塞がない）
     scheduleGroups().forEach(g => {
-      // 企画連携ゲート未クリアのグループは、個別の丸と同じく共通線ドラッグでも動かさない（鍵を無視してしまうため）
-      if (cfg.gateIndex != null && i === cfg.gateIndex && gateLockActive(view, g.name)) return;
       const m = g.children[0];
       const d = stepDate(view, m, i);
       if (d) setStepOverride(view, m, i, addDaysISO(d, delta));
