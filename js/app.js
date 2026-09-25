@@ -1583,7 +1583,10 @@
   function setStepLineDate(view, i, newDate) {
     const cur = stepLineDate(view, i); if (!cur) return;
     const delta = diffDaysISO(cur, newDate); if (!delta) return;
+    const cfg = SCHED[view];
     scheduleGroups().forEach(g => {
+      // 企画連携ゲート未クリアのグループは、個別の丸と同じく共通線ドラッグでも動かさない（鍵を無視してしまうため）
+      if (cfg.gateIndex != null && i === cfg.gateIndex && gateLockActive(view, g.name)) return;
       const m = g.children[0];
       const d = stepDate(view, m, i);
       if (d) setStepOverride(view, m, i, addDaysISO(d, delta));
@@ -1865,7 +1868,7 @@
       const note = getNote(key);
       const top = 6 + tier * TIER_H;
       // 共通線と色を合わせた工程は、予定(plan)状態の時だけ丸もその色にする（遅延・完了・鍵は従来通りの状態色を優先）
-      const catStyle = (p.catColor && p.st === "plan") ? `;background:${p.catColor}` : "";
+      const catStyle = (p.catColor && (p.st === "plan" || p.st === "fix")) ? `;background:${p.catColor}` : "";
       const dotEl = el("div", { class: "sg-ms " + p.st + (p.custom ? " custom" : ""), style: `left:${px - 9.5}px;top:${top}px${catStyle}`,
         title: `${p.label}（${p.mn !== p.mx ? fmtMD(p.mn) + "〜" + fmtMD(p.mx) : fmtMD(p.mn)}）` + (note ? "\nメモ：" + note : "") });
       if (p.st === "done") dotEl.append(icon("check"));
@@ -1907,7 +1910,9 @@
       else if (states.includes("lock")) st = "lock";
       else st = states.includes("brief") ? "brief" : "plan";
       const cl = (cfg.commonLines || []).find(x => x.stepIndex === i);
-      pts.push({ i, label, mn: ds[0], mx: ds[ds.length - 1], st, catColor: cl ? cl.color : null });
+      // 最終ステップ（入稿/宛名入稿）はcommonLinesに載っていないが、軸(データ入稿日)と同じ日・同じ色として扱う
+      const catColor = cl ? cl.color : (i === cfg.steps.length - 1 ? cfg.axisColor : null);
+      pts.push({ i, label, mn: ds[0], mx: ds[ds.length - 1], st, catColor });
     });
     customForRow(view, rowKey).forEach(c => pts.push({ label: c.label, mn: c.date, mx: c.date, st: customVisualState(c), custom: c }));
     growRowForClusters(tr, pts, range, 54);

@@ -480,7 +480,7 @@ body.readonly .sg-kickoff-b, body.readonly .sg-kickoff-who input { pointer-event
 
 .sg-conn { position: absolute; height: 3px; background: #ccd3de; border-radius: 2px; top: 14px; z-index: 1; pointer-events: none; }
 .sg-span { position: absolute; height: 9px; background: rgba(167,139,250,.28); border-radius: 5px; top: 11px; z-index: 1; pointer-events: none; }
-.sg-ms { position: absolute; top: 6px; width: 19px; height: 19px; border-radius: 50%; z-index: 3; cursor: grab;
+.sg-ms { position: absolute; top: 6px; width: 19px; height: 19px; border-radius: 50%; z-index: 6; cursor: grab;
   border: 2px solid #fff; box-shadow: 0 1px 3px rgba(16,24,40,.28); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; }
 .sg-ms:active { cursor: grabbing; }
 .sg-ms.drag { outline: 2px solid var(--accent); outline-offset: 2px; }
