@@ -139,6 +139,34 @@
     };
     return merged;
   }
+  // mergeの結果を「いま画面が掴んでいるオブジェクトの中身だけ差し替える」形で反映する。
+  // state.model = merged のように入れ替えると、各入力欄のイベントハンドラ（件数・P3/List・郵便割合・
+  // 詳細パネル等は行オブジェクトを直接掴んでいる）が古いオブジェクトに取り残され、そこへ入力した値が
+  // state.modelに入らないまま「保存済み」になり、次の再描画で入力前の値に戻ってしまう。
+  // id付きの配列は要素の参照も維持する（開いているポップアップやドラッグ中の参照も生き残る）。
+  function syncArrayInPlace(target, src) {
+    const idable = a => a.every(x => x && typeof x === "object" && x.id);
+    if (!idable(target) || !idable(src)) { target.length = 0; target.push(...src); return; }
+    const byId = new Map(target.map(o => [o.id, o]));
+    const next = src.map(s => { const t = byId.get(s.id); if (!t || t === s) return s; syncObjectInPlace(t, s); return t; });
+    target.length = 0; target.push(...next);
+  }
+  function syncObjectInPlace(target, src) {
+    if (target === src) return;
+    Object.keys(target).forEach(k => { if (!(k in src)) delete target[k]; });
+    Object.keys(src).forEach(k => {
+      const sv = src[k], tv = target[k];
+      if (Array.isArray(sv) && Array.isArray(tv)) syncArrayInPlace(tv, sv);
+      else if (sv && tv && typeof sv === "object" && typeof tv === "object" && !Array.isArray(sv) && !Array.isArray(tv)) syncObjectInPlace(tv, sv);
+      else target[k] = sv;
+    });
+  }
+  // 全角で打った数字（１０００など）を捨てずに半角へ直す。IMEをONのまま数値欄に入力しても消えないようにする
+  function toHalfWidthNum(v) {
+    return String(v == null ? "" : v)
+      .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+      .replace(/[．。]/g, ".");
+  }
   // 旧データ互換：欠けフィールドを補完
   function normalize(m) {
     ["active","carryNext","carryFuture"].forEach(k => (m[k]||[]).forEach(x => {
@@ -455,6 +483,9 @@
       const lines = txt.replace(/\r\n?/g, "\n").split("\n");
       while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
       if (lines.length <= 1) return;   // 単一値は通常の貼り付けに任せる
+      // 過去月比較パネルの行は当月のモデルに属さない。ここで連続貼り付けすると当月の行を書き換えてしまうため、
+      // その欄だけの通常の貼り付けに任せる
+      if (!findMeasure(m.id)) return;
       e.preventDefault();
       if (!state.editing) return;
       const key = sectionOf(m);
@@ -471,12 +502,17 @@
   function numField(m, f, decimal, cls) {
     const inp = el("input", { class: cls, inputmode: decimal ? "decimal" : "numeric", value: fmtNum(m[f], decimal), placeholder: decimal ? "—" : "0" });
     inp.addEventListener("focus", () => { inp.value = (m[f] ?? "") === "" ? "" : String(m[f]).replace(/,/g, ""); });
-    inp.addEventListener("input", () => {
-      let raw = inp.value.replace(decimal ? /[^0-9.]/g : /[^0-9]/g, "");
+    const take = () => {
+      let raw = toHalfWidthNum(inp.value).replace(decimal ? /[^0-9.]/g : /[^0-9]/g, "");
       if (decimal) { const p = raw.split("."); raw = p.shift() + (p.length ? "." + p.join("") : ""); }
       m[f] = raw;
       if (f === "estimatedCount") renderSummary();
-    });
+      return raw;
+    };
+    // 日本語入力の変換中（isComposing）に値を取り込むと、確定前の文字を数字でないとして捨ててしまい、
+    // 全角で入力した数値が消える。変換が確定してから取り込み、半角に直した値を欄にも反映する。
+    inp.addEventListener("input", e => { if (e.isComposing) return; take(); });
+    inp.addEventListener("compositionend", () => { const raw = take(); if (inp.value !== raw) inp.value = raw; });
     inp.addEventListener("blur", () => { inp.value = fmtNum(m[f], decimal); });
     attachFillDownPaste(inp, m, (row, raw) => {
       let v = String(raw).split("\t")[0].replace(decimal ? /[^0-9.]/g : /[^0-9]/g, "");
@@ -489,8 +525,11 @@
   function deliveryField(m) {
     const wrap = el("div", { class: "delivery-field" });
     const inp = el("input", { class: "w-souf", inputmode: "numeric", value: m.delivery ?? "100", placeholder: "100", title: "郵便で発送する割合（％）。残りはメール便扱い（手入力）" });
-    const clamp = raw => { const v = raw.replace(/[^0-9]/g, ""); return v === "" ? "" : String(Math.min(100, parseInt(v, 10))); };
-    inp.addEventListener("input", () => { inp.value = clamp(inp.value); m.delivery = inp.value; });
+    const clamp = raw => { const v = toHalfWidthNum(raw).replace(/[^0-9]/g, ""); return v === "" ? "" : String(Math.min(100, parseInt(v, 10))); };
+    // 変換中に inp.value を書き換えるとIMEの変換が壊れて入力できなくなるため、確定後だけ整形する
+    const takeDlv = () => { const v = clamp(inp.value); if (inp.value !== v) inp.value = v; m.delivery = v; };
+    inp.addEventListener("input", e => { if (e.isComposing) return; takeDlv(); });
+    inp.addEventListener("compositionend", takeDlv);
     inp.addEventListener("change", () => {
       const n = applyToSelection(m, "delivery", inp.value);
       if (n > 1) { rerender(); flash(`選択中の${n}件をまとめて変更しました`); }
@@ -775,12 +814,30 @@
       if (nin && !(m.officialName && m.officialName.trim())) nin.value = derive(m, state.month).fullName;
     });
   }
+  // 行を作り直す時、いま入力している欄（直前にクリックして入ったばかりの欄も含む）が消えないよう、
+  // フォーカスとカーソル位置を新しい行の同じ欄へ引き継ぐ
+  function replaceRowKeepFocus(tr, newTr) {
+    const a = document.activeElement;
+    const sel = "input, select, textarea";
+    let idx = -1, selStart = null, selEnd = null;
+    if (a && tr.contains(a)) {
+      idx = [...tr.querySelectorAll(sel)].indexOf(a);
+      try { selStart = a.selectionStart; selEnd = a.selectionEnd; } catch (_) {}
+    }
+    tr.replaceWith(newTr);
+    if (idx < 0) return;
+    const t = [...newTr.querySelectorAll(sel)][idx]; if (!t) return;
+    t.focus();
+    if (selStart != null) { try { t.setSelectionRange(selStart, selEnd); } catch (_) {} }
+  }
+  // 入力欄のblurから呼ぶ用。クリック先へフォーカスが移りきってから作り直す（先に作り直すと移動先が消える）
+  function rerenderRowSoon(key, m) { setTimeout(() => rerenderRow(key, m), 0); }
   function rerenderRow(key, m) {
     markDirty();
-    const tr = document.querySelector(`tr[data-row="${m.id}"]`); if (tr) tr.replaceWith(row(key, m));
+    const tr = document.querySelector(`tr[data-row="${m.id}"]`); if (tr) replaceRowKeepFocus(tr, row(key, m));
     // この施策を比較元にしている行も更新
     ["active","carryNext","carryFuture"].forEach(k => state.model[k].forEach(mm => {
-      if (mm.compareBaseId === m.id) { const t = document.querySelector(`tr[data-row="${mm.id}"]`); if (t) t.replaceWith(row(k, mm)); }
+      if (mm.compareBaseId === m.id) { const t = document.querySelector(`tr[data-row="${mm.id}"]`); if (t) replaceRowKeepFocus(t, row(k, mm)); }
     }));
   }
   function copyMeasure(key, id) {
@@ -1008,7 +1065,7 @@
     const ta = el("textarea", { class: "d-note", rows: "1", placeholder: "" }); ta.value = m.note || "";
     const grow = () => { ta.style.height = "auto"; ta.style.height = Math.max(30, ta.scrollHeight) + "px"; };
     ta.addEventListener("input", () => { m.note = ta.value; grow(); });
-    ta.addEventListener("blur", () => rerenderRow(key, m));
+    ta.addEventListener("blur", () => rerenderRowSoon(key, m));
     wNote.append(ta); setTimeout(grow, 0);
     const mk = (label, f, cls, opts = {}) => {
       const w = el("div", { class: "dw-field " + cls });
@@ -1017,7 +1074,7 @@
       i.addEventListener("input", () => { m[f] = i.value; });
       i.addEventListener("blur", () => {
         if (opts.dateFmt) { m[f] = normalizeDateSlashes(m[f]); i.value = m[f]; }
-        rerenderRow(key, m);
+        rerenderRowSoon(key, m);
       });
       if (opts.paste) attachFillDownPaste(i, m, (row, raw) => { row[f] = String(raw).split("\t")[0].trim(); });
       w.append(i);
@@ -1030,7 +1087,7 @@
       const ta2 = el("textarea", { class: "d-note", rows: "1", placeholder: "" }); ta2.value = m[f] || "";
       const grow2 = () => { ta2.style.height = "auto"; ta2.style.height = Math.max(30, ta2.scrollHeight) + "px"; };
       ta2.addEventListener("input", () => { m[f] = ta2.value; grow2(); });
-      ta2.addEventListener("blur", () => rerenderRow(key, m));
+      ta2.addEventListener("blur", () => rerenderRowSoon(key, m));
       w.append(ta2); setTimeout(grow2, 0);
       return w;
     };
@@ -1042,7 +1099,7 @@
       [["origCode1", "①"], ["origCode2", "②"]].forEach(([f, ph]) => {
         const i = el("input", { class: "origcode-in", value: m[f] || "", placeholder: ph });
         i.addEventListener("input", () => { m[f] = i.value; });
-        i.addEventListener("blur", () => rerenderRow(key, m));
+        i.addEventListener("blur", () => rerenderRowSoon(key, m));
         pair.append(i);
       });
       w.append(pair);
@@ -1061,7 +1118,7 @@
     const pnTa = el("textarea", { class: "d-note", rows: "1", placeholder: "" }); pnTa.value = m.printerNote || "";
     const pnGrow = () => { pnTa.style.height = "auto"; pnTa.style.height = Math.max(30, pnTa.scrollHeight) + "px"; };
     pnTa.addEventListener("input", () => { m.printerNote = pnTa.value; pnGrow(); });
-    pnTa.addEventListener("blur", () => rerenderRow(key, m));
+    pnTa.addEventListener("blur", () => rerenderRowSoon(key, m));
     wPrinterNote.append(pnTa); setTimeout(pnGrow, 0);
     // 掲載商品・特典、FIX時期・仕様はそれぞれ1列に上下2段でまとめる
     const wProdBenefit = el("div", { class: "dw-stack col-prodbenefit" });
@@ -1118,7 +1175,7 @@
     reasonTa.value = m.cancelReason || "";
     const reasonGrow = () => { reasonTa.style.height = "auto"; reasonTa.style.height = Math.max(30, reasonTa.scrollHeight) + "px"; };
     reasonTa.addEventListener("input", () => { m.cancelReason = reasonTa.value; reasonGrow(); });
-    reasonTa.addEventListener("blur", () => rerenderRow(key, m));
+    reasonTa.addEventListener("blur", () => rerenderRowSoon(key, m));
     wReason.append(reasonTa); setTimeout(reasonGrow, 0);
     // 振替先（同月・今月実施の他施策から1つ選ぶ。選ぶだけで、確保していた件数がそのまま丸ごと移る）
     const wDest = el("div", { class: "dw-field col-cancelto" });
@@ -1237,21 +1294,40 @@
       if (!months.includes(month)) return;
       const raw = await S.readMonth(month);
       if (!raw) return;
-      state.crossMonth[month] = { model: normalize(raw), dirty: false, saving: false, timer: null };
-      if (state.tab === "list") renderBody();
+      const model = normalize(raw);
+      state.crossMonth[month] = { model, baseline: JSON.parse(JSON.stringify(model)), dirty: false, saving: false, timer: null };
+      if (state.tab === "list") autoRefresh("body");   // 入力中に読み込みが終わっても表を作り直さない
     } catch (e) { /* 読み込めなければ「対象なし」として静かに諦める */ }
   }
   function scheduleCrossSave(month) {
     const entry = state.crossMonth[month]; if (!entry) return;
-    entry.dirty = true;
+    entry.dirty = true; entry.seq = (entry.seq || 0) + 1;
     clearTimeout(entry.timer);
     entry.timer = setTimeout(() => doCrossSave(month), 1300);
   }
   async function doCrossSave(month) {
     const entry = state.crossMonth[month]; if (!entry) return;
     entry.saving = true;
+    const seq = entry.seq || 0;
     entry.model.updatedAt = new Date().toISOString(); entry.model.updatedBy = state.user;
-    try { await S.writeMonth(month, entry.model); entry.dirty = false; clearTimeout(entry.retryTimer); }
+    try {
+      // 本体の保存と同じ3-way merge。過去月も複数人が同時に開いていることがあるため、
+      // 自分が触っていない箇所は共有フォルダの最新を残す（丸ごと上書きすると他の人の入力が戻ってしまう）
+      let diskRaw = null;
+      try { diskRaw = await S.readMonth(month); } catch (e) {}
+      const disk = diskRaw ? normalize(diskRaw) : entry.model;
+      const merged = mergeModels(entry.baseline || entry.model, entry.model, disk);
+      const importedOthers = JSON.stringify(merged) !== JSON.stringify(entry.model);
+      const payload = JSON.parse(JSON.stringify(merged));
+      await S.writeMonth(month, payload);
+      syncObjectInPlace(entry.model, merged);
+      entry.baseline = payload;
+      clearTimeout(entry.retryTimer);
+      // 書き込み待ちの間の入力は保存できていないため、未保存のままもう一度保存する
+      entry.dirty = ((entry.seq || 0) !== seq);
+      if (entry.dirty) scheduleCrossSave(month);
+      if (importedOthers && state.tab === "list") autoRefresh("body");
+    }
     catch (e) {
       console.error("[cross-month autosave] 保存に失敗:", e);
       clearTimeout(entry.retryTimer);
@@ -1296,7 +1372,9 @@
     crossInputEvent(lmSel, "change", () => { m.listMethod = lmSel.value; scheduleCrossSave(month); });
     tr.append(td(lmSel));
     const dlvIn = el("input", { class: "w-souf", inputmode: "numeric", value: m.delivery ?? "100" });
-    crossInputEvent(dlvIn, "input", () => { dlvIn.value = dlvIn.value.replace(/[^0-9]/g, ""); m.delivery = dlvIn.value; scheduleCrossSave(month); });
+    const takeCrossDlv = () => { const v = toHalfWidthNum(dlvIn.value).replace(/[^0-9]/g, ""); if (dlvIn.value !== v) dlvIn.value = v; m.delivery = v; scheduleCrossSave(month); };
+    crossInputEvent(dlvIn, "input", e => { if (e.isComposing) return; takeCrossDlv(); });
+    crossInputEvent(dlvIn, "compositionend", takeCrossDlv);
     tr.append(el("td", {}, el("div", { class: "delivery-field" }, dlvIn, el("span", { class: "pct-suffix" }, "%"))));
     const p3In = numField(m, "p3", true, "w-p3");
     crossInputEvent(p3In, "input", () => scheduleCrossSave(month));
@@ -1418,6 +1496,34 @@
     renderSummary(); renderLockBar(); updateSavedAt(); updateTitle(); updateSelBar(); updateMailDate(); renderKickoffCard();
     if (state.tab === "list") renderBody(); else renderScheduleBoard();
   }
+  // ===== 入力中の自動再描画を待たせる =====
+  // 自動保存で他の人の更新を取り込んだ時・共有フォルダのポーリング・過去月の読み込み完了などで
+  // 表を作り直すと、入力途中の欄やIMEの変換が消えて「文字が打てない」状態になる。
+  // 入力欄にフォーカスがある／変換中はいったん保留し、入力から離れた時にまとめて反映する。
+  let imeComposing = false, pendingAuto = null, pendingTimer = null;   // pendingAuto: "full" | "body" | null
+  function isTypingNow() {
+    if (imeComposing) return true;
+    const a = document.activeElement;
+    return !!(a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || a.isContentEditable));
+  }
+  function runAuto(kind) { if (kind === "full") rerender(); else renderBody(); }
+  function clearPendingAuto() { pendingAuto = null; if (pendingTimer) { clearInterval(pendingTimer); pendingTimer = null; } }
+  function autoRefresh(kind) {
+    if (isTypingNow()) {
+      pendingAuto = (pendingAuto === "full" || kind === "full") ? "full" : "body";
+      // フォーカスイベントが来ない場合もあるため、入力が終わったかを定期的に見て反映する
+      if (!pendingTimer) pendingTimer = setInterval(tryFlushAuto, 800);
+      return;
+    }
+    clearPendingAuto(); runAuto(kind);
+  }
+  function tryFlushAuto() {
+    if (!pendingAuto) { clearPendingAuto(); return; }
+    if (isTypingNow()) return;   // まだ入力中なら次の機会に回す
+    const k = pendingAuto; clearPendingAuto(); runAuto(k);
+  }
+  // 別の入力欄へ移動しただけの時はまだ待つ（フォーカスが落ち着くのを待ってから判定する）
+  function flushAutoRefresh() { if (pendingAuto) setTimeout(tryFlushAuto, 150); }
   function updateTitle() {
     const e = $("#planTitle"); if (e) e.textContent = state.model ? (state.model.title || "") : "";
     const b = $("#brandTitle"); if (b) b.textContent = (state.model && state.month) ? (parseInt(state.month.slice(4), 10) + "月") : "DM企画サマリー";
@@ -2339,7 +2445,10 @@
     state.editing = true; rerender();
   }
   // ===== 自動保存（Googleスプレッドシート風：手が止まって少ししたら保存） =====
-  function markDirty() { if (!state.editing) return; state.dirty = true; scheduleAutoSave(); }
+  // dirtySeq＝編集のたびに進むカウンタ。共有フォルダへの書き込み待ちの間に打った文字まで
+  // 「保存済み」にしてしまうと、その入力が保存されないまま消えてしまうため、保存前後で見比べる
+  let dirtySeq = 0;
+  function markDirty() { if (!state.editing) return; state.dirty = true; dirtySeq++; scheduleAutoSave(); }
   function scheduleAutoSave() { clearTimeout(autoTimer); autoTimer = setTimeout(() => doAutoSave(), 1300); updateSavedAt(); }
   async function doAutoSave(force) {
     clearTimeout(autoTimer);
@@ -2347,6 +2456,7 @@
     if (!force && !state.dirty) return;
     saving = true; updateSavedAt();
     const stamp = new Date().toISOString();
+    const seq = dirtySeq;
     try {
       state.model.updatedAt = stamp; state.model.updatedBy = state.user;   // 書き込み成功時のみ有効な値
       // 保存直前に共有フォルダの最新版を読み直し、同時アクセス中の他の人の更新（違う場所の編集）を潰さないよう3-way mergeする
@@ -2356,13 +2466,20 @@
       const merged = mergeModels(state.baseline || state.model, state.model, disk);
       // 自分の変更だけなら（他の人の更新が混ざっていないなら）画面は再描画しない＝入力中の再描画でカーソルが飛ぶのを防ぐ
       const importedOthers = JSON.stringify(merged) !== JSON.stringify(state.model);
-      await S.writeMonth(state.month, merged);
-      state.model = merged;
+      // これから実際に書き込む内容を固定する。mergedは編集中の行オブジェクトを参照しているため、
+      // 書き込み待ちの間に打った文字が入る場合と入らない場合があり、そのままbaselineにすると
+      // 「保存されていないのに保存済みの基準」になって次回のmergeで共有フォルダ側の古い値に戻されてしまう。
+      const payload = JSON.parse(JSON.stringify(merged));
+      await S.writeMonth(state.month, payload);
+      syncObjectInPlace(state.model, merged);   // 入力欄が掴んでいる行オブジェクトを生かしたまま中身を反映（入れ替えると入力値が失われる）
       state.mtime = await S.monthMtime(state.month);
-      state.baseline = JSON.parse(JSON.stringify(merged));
-      saving = false; state.saveError = ""; state.dirty = false; updateSavedAt();
+      state.baseline = payload;                 // 基準点＝実際に書き込んだ内容
+      saving = false; state.saveError = ""; updateSavedAt();
       clearTimeout(retryTimer);
-      if (importedOthers) rerender();   // 他の人の更新が混ざった時だけ、古い行参照を掴んだままにならないよう反映
+      // 書き込み待ちの間にも入力があったなら、未保存のまま残してもう一度保存する
+      state.dirty = (dirtySeq !== seq);
+      if (state.dirty) scheduleAutoSave();
+      if (importedOthers) autoRefresh("full");   // 他の人の更新が混ざった時だけ画面に反映（入力中なら入力が終わるまで待つ）
     } catch (e) {
       // 書き込み失敗：保存済み扱いにしない。理由を画面に出す。同時アクセスが多いと起きやすい一時的な競合を想定し、数秒後に自動で再試行する
       saving = false; state.saveError = (e && e.message) ? e.message : String(e); updateSavedAt();
@@ -2517,7 +2634,12 @@
       if (!state.month) return; await renderLockBar();
       if (state.editing) return;
       const mt = await S.monthMtime(state.month);
-      if (mt && mt !== state.mtime) { state.model = normalize((await S.readMonth(state.month)) || state.model); state.mtime = mt; rerender(); flash("最新の内容に更新しました"); }
+      if (mt && mt !== state.mtime) {
+        const fresh = normalize((await S.readMonth(state.month)) || state.model);
+        syncObjectInPlace(state.model, fresh);   // 参照を保ったまま最新内容へ
+        state.baseline = JSON.parse(JSON.stringify(state.model));
+        state.mtime = mt; autoRefresh("full"); flash("最新の内容に更新しました");
+      }
     }, 5000);
   }
   let ft; function flash(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(ft); ft=setTimeout(()=>t.classList.remove("show"),2000); }
@@ -2610,6 +2732,10 @@
       const inp = next.children[idx].querySelector("input, select");
       if (inp) { e.preventDefault(); inp.focus(); try { inp.select && inp.select(); } catch (_) {} }
     });
+    // 日本語入力の変換中は自動再描画を保留し、入力欄から離れたら保留分を反映する
+    document.addEventListener("compositionstart", () => { imeComposing = true; });
+    document.addEventListener("compositionend", () => { imeComposing = false; flushAutoRefresh(); });
+    document.addEventListener("focusout", flushAutoRefresh);
     // チェック欄のドラッグ選択：マウスボタンを離したら終了
     document.addEventListener("mouseup", () => { state.dragCheckOn = null; state.crossDragCheckOn = null; document.body.classList.remove("no-usersel"); });
     // 閉じる直前：未保存があれば保存を発火し、完了保証がないため確認ダイアログで引き止める
