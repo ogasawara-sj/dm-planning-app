@@ -2368,16 +2368,19 @@
     const text = values.join("\n");
     navigator.clipboard.writeText(text).then(() => flash(`${label}を${values.length}件コピーしました（案件共有シートへ貼り付けできます）`)).catch(() => {});
   }
+  // 一括コピーは画面の表示順（中止済みは除外・実施中だけを最新の並びで）に揃える。
+  // 中止・振替した施策まで含めると、案件共有シートに実施していない施策名が混ざってしまうため。
+  function liveSortedRows(key) { return orderedRows(key).live; }
   function copyAllOfficialNames() {
-    const rows = sortView(state.model.active.filter(passFilters));
+    const rows = liveSortedRows("active");
     copyToClipboardLines(rows.map(m => derive(m, state.month).fullName), "正式名");
   }
   function copyAllCounts() {
-    const rows = sortView(state.model.active.filter(passFilters));
+    const rows = liveSortedRows("active");
     copyToClipboardLines(rows.map(m => m.estimatedCount || ""), "想定件数");
   }
   function copyAllOwners() {
-    const rows = sortView(state.model.active.filter(passFilters));
+    const rows = liveSortedRows("active");
     copyToClipboardLines(rows.map(m => m.owner || ""), "担当");
   }
 
@@ -2541,7 +2544,7 @@
   function openEstimateModal() {
     if (!state.model) { alert("対象月を選んでください。"); return; }
     const mailDate = state.model.mailDate;
-    const rows = sortView(state.model.active.filter(passFilters)).filter(m => m.baseName && m.baseName.trim());
+    const rows = sortView(state.model.active.filter(passFilters)).filter(m => m.baseName && m.baseName.trim() && !m.cancelled);
     const body = el("div", {});
     if (!mailDate) {
       body.append(el("div", { class: "modal-err" }, "先にヘッダーの「投函日」を入力してください（編集モードにして入力します）。"));
@@ -2615,7 +2618,7 @@
   // デザインチーム共有用のDM施策サマリーExcel出力（保存先フォルダは持たず、ブラウザダウンロードのみ）
   function openMeasuresExport() {
     if (!state.model) { alert("対象月を選んでください。"); return; }
-    const rows = state.model.active.filter(m => m.baseName && m.baseName.trim());
+    const rows = state.model.active.filter(m => m.baseName && m.baseName.trim() && !m.cancelled);
     if (!rows.length) { alert("出力対象の施策がありません。"); return; }
     window.MeasuresExport.build({ rows }).then(buf => {
       const fname = window.MeasuresExport.filename(state.month);
