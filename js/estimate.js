@@ -38,9 +38,9 @@ window.Estimate = (function () {
   function formulaCell(coord, style, formula) {
     return `<c r="${coord}" s="${style}"><f>${escXml(formula)}</f></c>`;
   }
-  // 11月発送分以降：郵便料金（税込）を税抜+1.7円ベースに更新（税込=(税抜+1.7)*1.1）
+  // 11月発送分以降：郵便料金（税込）の改定値
   const PRICE_BUMP_FROM = "202611";
-  const BUMPED_POSTAGE = { R5: 57.97, R6: 56.27, R7: 54.57 };
+  const BUMPED_POSTAGE = { R5: 57.80, R6: 56.10, R7: 54.40 };
 
   // テンプレート本体はバイナリを直接コミットせず、js/estimate-template-b64.js に
   // Base64文字列（window.ESTIMATE_TEMPLATE_B64）として埋め込んでいる（.gitignoreのxlsm除外・改行変換の影響を避けるため）
