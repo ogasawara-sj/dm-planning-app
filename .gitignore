@@ -12,3 +12,6 @@
 # OS
 .DS_Store
 Thumbs.db
+
+# 引き継ぎ資料（社内パス・担当者名を含むため公開しない）
+ONBOARDING.md
