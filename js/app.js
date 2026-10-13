@@ -2173,8 +2173,15 @@
     const view = state.tab; const cfg = SCHED[view];
     const groups = scheduleGroups();
 
-    // 縦線（データ入稿日・各共通線）はドラッグで日付変更できるため、上部の日付入力欄の羅列は廃止（煩雑になるため）
+    // 各共通線はドラッグで日付変更できるため日付欄の羅列は廃止したが、基準となる入稿日（データ入稿日／宛名入稿日）だけは
+    // 新しい月で空の時に入力する場所が必要なため、常にここへ置く
     const controls = el("div", { class: "sg-controls" });
+    const axisInp = el("input", { type: "date", class: "sg-axis-input", value: state.model[cfg.axisField] || "", title: cfg.axisLabel + "を入れると、そこから逆算してスケジュールが組まれます" });
+    axisInp.addEventListener("change", () => {
+      if (!state.editing) { axisInp.value = state.model[cfg.axisField] || ""; blockEdit(); return; }
+      state.model[cfg.axisField] = axisInp.value; markDirty(); renderScheduleBoard();
+    });
+    controls.append(el("label", { class: "sg-axis-field" }, cfg.axisLabel, axisInp));
     const pastBtn = el("button", { class: "btn small ghost", title: "今日より前の日付で、まだ完了になっていない工程をまとめて完了（☑）にします" }, "☑ 今日より前を完了に");
     pastBtn.addEventListener("click", markAllPastDone);
     controls.append(pastBtn);

@@ -429,6 +429,9 @@ body.readonly .sg-kickoff-b, body.readonly .sg-kickoff-who input { pointer-event
 /* ==================== スケジュール（デザイン／リスト）ガント ==================== */
 .sg-wrap { margin: 12px 18px 24px; }
 .sg-controls { display: flex; align-items: center; gap: 12px; padding: 10px 2px; flex-wrap: wrap; }
+.sg-axis-field { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--ink2, #475569); }
+.sg-axis-input { font: inherit; font-weight: 500; padding: 4px 8px; border: 1px solid var(--line, #e2e8f0); border-radius: 8px; background: #fff; }
+body.readonly .sg-axis-input { pointer-events: none; background: transparent; }
 .sg-field { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 7px; }
 .sg-field input[type=date] { font-size: 12.5px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font-family: inherit; }
 .sg-sec { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--sh); }
