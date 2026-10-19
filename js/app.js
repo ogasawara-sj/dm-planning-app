@@ -1752,6 +1752,7 @@
   function scheduleGroups() {
     const map = {}, order = [];
     state.model.active.forEach(m => {
+      if (m.cancelled) return;   // 中止した施策はスケジュールに出さない（施策名グループ全体が中止なら行ごと消える）
       const name = (m.baseName || "").trim(); if (!name) return;
       if (!map[name]) { map[name] = { name, children: [] }; order.push(map[name]); }
       map[name].children.push(m);
