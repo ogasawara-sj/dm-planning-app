@@ -1540,9 +1540,16 @@
       // 通常のstepsに戻しつつ、下のcommonLinesから同じstepIndexを指す形で線を重ねて表示する。
       steps: ["RO決定", "企画連携", "基本情報入力", "QR紐づけ", "KUROSHIO登録完了日", "初校", "2校", "校了", "入稿"],
       owners: ["CRM", "CRM", "デザイン", "デザイン", "デザイン", "デザイン", "デザイン", "CRM", "デザイン"],
-      // データ入稿日からの逆算日数（実データより算出。個別事情はドラッグで調整）。
-      // RO決定・基本情報入力・QR紐づけ・KUROSHIO登録完了日は下のspecialDatesで「毎月◯日」を優先する
-      offsets: [null, 52, null, null, null, 49, 46, 38, 0],
+      // 企画連携・初校・2校・校了は、データ入稿日ではなく「RO決定」を起点に決める（入稿日が月によって大きく動いても、
+      // RO決定→企画連携→初校→2校の順序が逆転しないようにするため）。起点の日付を手で動かすと、後続も一緒に動く。
+      // 入稿（最終ステップ）だけデータ入稿日そのもの。
+      offsets: [null, null, null, null, null, null, null, null, 0],
+      chain: {
+        1: { from: 0, days: 1, dir: "next" },   // 企画連携 = RO決定の翌営業日
+        5: { from: 1, days: 3, dir: "prev" },   // 初校 = 企画連携の3日後
+        6: { from: 5, days: 3, dir: "prev" },   // 2校 = 初校の3日後
+        7: { from: 0, days: 15, dir: "prev" },  // 校了 = RO決定の15日後
+      },
       specialDates: {
         0: { day: 24, monthsBefore: 2 },    // RO決定：発送月の2か月前・24日
         2: { day: 11, monthsBefore: 2 },    // 基本情報入力
@@ -1654,6 +1661,11 @@
     while (!isBizDay(cur)) cur = addDaysISO(cur, -1);
     return cur;
   }
+  function nextBizDay(iso) {
+    let cur = iso;
+    while (!isBizDay(cur)) cur = addDaysISO(cur, 1);
+    return cur;
+  }
   function bizDayOnOrBefore(yyyymm, day) {
     const y = parseInt(yyyymm.slice(0, 4), 10), mo = parseInt(yyyymm.slice(4, 6), 10);
     return prevBizDay(isoOf(new Date(y, mo - 1, day)));
@@ -1663,6 +1675,13 @@
     if (cfg.specialDates && cfg.specialDates[i] && state.month) {
       const sd = cfg.specialDates[i];
       return bizDayOnOrBefore(monthsBeforeYYYYMM(state.month, sd.monthsBefore), sd.day);
+    }
+    if (cfg.chain && cfg.chain[i]) {
+      const c = cfg.chain[i];
+      const base = stepDate(view, m, c.from);   // 起点が手で動かされていれば、その日付に追従する
+      if (!base) return "";
+      const d = addDaysISO(base, c.days);
+      return c.dir === "next" ? nextBizDay(d) : prevBizDay(d);
     }
     const axis = state.model[cfg.axisField];
     if (!axis) return "";
