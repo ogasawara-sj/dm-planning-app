@@ -53,8 +53,8 @@
     const e = $("#savedAt"); if (!e) return;
     if (saving) { e.className = "saved-at saving"; e.textContent = "保存中…"; return; }
     if (state.saveError) { e.className = "saved-at err"; e.textContent = "⚠ 保存できません：" + state.saveError; e.title = state.saveError; return; }
-    if (state.model && state.model.updatedAt) { e.className = "saved-at ok"; e.textContent = `✓ 自動保存済み ${formatDT(state.model.updatedAt)}${state.model.updatedBy ? "（" + state.model.updatedBy + "）" : ""}`; }
-    else { e.className = "saved-at"; e.textContent = state.editing ? "自動保存されます" : ""; }
+    if (state.model && state.model.updatedAt) { e.className = "saved-at ok"; e.textContent = `✓ 最終保存 ${formatDT(state.model.updatedAt)}${state.model.updatedBy ? "（" + state.model.updatedBy + "）" : ""}`; }
+    else { e.className = "saved-at"; e.textContent = state.editing ? "「保存」ボタンで保存します" : ""; }
   }
 
   function emptyCond() {
@@ -1299,11 +1299,11 @@
       if (state.tab === "list") autoRefresh("body");   // 入力中に読み込みが終わっても表を作り直さない
     } catch (e) { /* 読み込めなければ「対象なし」として静かに諦める */ }
   }
+  // 過去月比較の欄も自動保存はせず、未保存の印を付けるだけ（「保存」ボタンでまとめて書き込む）
   function scheduleCrossSave(month) {
     const entry = state.crossMonth[month]; if (!entry) return;
     entry.dirty = true; entry.seq = (entry.seq || 0) + 1;
-    clearTimeout(entry.timer);
-    entry.timer = setTimeout(() => doCrossSave(month), 1300);
+    updateSaveBtn();
   }
   async function doCrossSave(month) {
     const entry = state.crossMonth[month]; if (!entry) return;
@@ -1322,21 +1322,20 @@
       await S.writeMonth(month, payload);
       syncObjectInPlace(entry.model, merged);
       entry.baseline = payload;
-      clearTimeout(entry.retryTimer);
-      // 書き込み待ちの間の入力は保存できていないため、未保存のままもう一度保存する
+      // 書き込み待ちの間の入力は保存できていないため、未保存のまま残す
       entry.dirty = ((entry.seq || 0) !== seq);
-      if (entry.dirty) scheduleCrossSave(month);
+      updateSaveBtn();
       if (importedOthers && state.tab === "list") autoRefresh("body");
     }
     catch (e) {
-      console.error("[cross-month autosave] 保存に失敗:", e);
-      clearTimeout(entry.retryTimer);
-      entry.retryTimer = setTimeout(() => { if (entry.dirty) doCrossSave(month); }, 4000);
+      console.error("[cross-month save] 保存に失敗:", e);
+      state.saveError = (e && e.message) ? e.message : String(e);
+      updateSavedAt(); updateSaveBtn();
     }
     entry.saving = false;
   }
   function flushCrossMonthSaves() {
-    Object.keys(state.crossMonth).forEach(mo => { const e = state.crossMonth[mo]; if (e && e.dirty) { clearTimeout(e.timer); doCrossSave(mo); } });
+    Object.keys(state.crossMonth).forEach(mo => { const e = state.crossMonth[mo]; if (e && e.dirty) doCrossSave(mo); });
   }
   // 過去月の入力欄は#board委譲リスナ（markDirty等）の対象外にするため、必ずバブリングを止める
   function crossInputEvent(inp, type, handler) { inp.addEventListener(type, e => { e.stopPropagation(); handler(e); }); }
@@ -1493,7 +1492,7 @@
     return wrap;
   }
   function rerender() {
-    renderSummary(); renderLockBar(); updateSavedAt(); updateTitle(); updateSelBar(); updateMailDate(); renderKickoffCard();
+    renderSummary(); renderLockBar(); updateSavedAt(); updateSaveBtn(); updateTitle(); updateSelBar(); updateMailDate(); renderKickoffCard();
     if (state.tab === "list") renderBody(); else renderScheduleBoard();
   }
   // ===== 入力中の自動再描画を待たせる =====
@@ -2447,9 +2446,13 @@
   // ============ 月の読み書き ============
   async function loadMonth(month) {
     if (!month) return;
+    // 自動保存をやめたため、未保存のまま月を切り替えると編集内容が消える。切り替える前に保存するか確認する
+    if (state.editing && hasUnsaved()) {
+      const ok = confirm("保存していない変更があります。\n\n「OK」＝保存してから切り替える\n「キャンセル」＝保存せずに切り替える（変更は失われます）");
+      if (ok) { await saveNow(false); if (state.saveError) { const s0 = $("#monthSelect"); if (s0) s0.value = state.month; return; } }
+      else { state.dirty = false; Object.keys(state.crossMonth).forEach(mo => { if (state.crossMonth[mo]) state.crossMonth[mo].dirty = false; }); }
+    }
     const sel = $("#monthSelect"); if (sel) sel.disabled = true;   // 読み込み中は触れないように（共有フォルダ読み取り待ち）
-    // 表示中だった過去月比較の未保存分は月を切り替える前に確定させ、比較対象（直近3ヶ月）をリセットする
-    await Promise.all(Object.keys(state.crossMonth).map(mo => { const e = state.crossMonth[mo]; return (e && e.dirty) ? doCrossSave(mo) : null; }));
     state.crossMonth = {}; state.crossSelected.clear(); state.crossExpanded = {};
     state.month = month; state.selected.clear();
     // 内容と更新日時を同時に読みに行く（順番に読むより速い）
@@ -2478,8 +2481,33 @@
   // dirtySeq＝編集のたびに進むカウンタ。共有フォルダへの書き込み待ちの間に打った文字まで
   // 「保存済み」にしてしまうと、その入力が保存されないまま消えてしまうため、保存前後で見比べる
   let dirtySeq = 0;
-  function markDirty() { if (!state.editing) return; state.dirty = true; dirtySeq++; scheduleAutoSave(); }
-  function scheduleAutoSave() { clearTimeout(autoTimer); autoTimer = setTimeout(() => doAutoSave(), 1300); updateSavedAt(); }
+  // 入力の途中で勝手に保存すると、打っている最中の文字が取りこぼされることがあるため自動保存はやめ、
+  // 「保存」ボタン（またはCtrl+S）を押した時だけ共有フォルダへ書き込む
+  function markDirty() { if (!state.editing) return; state.dirty = true; dirtySeq++; updateSaveBtn(); }
+  function hasUnsaved() {
+    if (state.dirty) return true;
+    return Object.keys(state.crossMonth).some(mo => { const e = state.crossMonth[mo]; return e && e.dirty; });
+  }
+  function updateSaveBtn() {
+    const b = $("#saveBtn"), lab = $("#saveBtnLabel"); if (!b || !lab) return;
+    const can = state.editing && state.model && S.isConnected();
+    b.classList.toggle("hidden", !can);
+    if (!can) return;
+    if (saving) { b.className = "save-btn saving"; lab.textContent = "保存中…"; b.disabled = true; return; }
+    b.disabled = false;
+    if (state.saveError) { b.className = "save-btn err"; lab.textContent = "保存できません（押して再試行）"; return; }
+    if (hasUnsaved()) { b.className = "save-btn dirty"; lab.textContent = "保存（未保存の変更あり）"; return; }
+    b.className = "save-btn"; lab.textContent = "保存済み";
+  }
+  // 保存ボタン／Ctrl+S から呼ぶ。今月ぶんと、過去月比較で触った月もまとめて保存する
+  async function saveNow(fromButton) {
+    if (!state.editing || !state.model || !S.isConnected()) { blockEdit(); return; }
+    await doAutoSave(true);
+    const months = Object.keys(state.crossMonth).filter(mo => { const e = state.crossMonth[mo]; return e && e.dirty; });
+    for (const mo of months) await doCrossSave(mo);
+    updateSaveBtn();
+    if (fromButton && !state.saveError) flash("保存しました");
+  }
   async function doAutoSave(force) {
     clearTimeout(autoTimer);
     if (!state.editing || !state.model || !S.isConnected()) return;
@@ -2506,17 +2534,15 @@
       state.baseline = payload;                 // 基準点＝実際に書き込んだ内容
       saving = false; state.saveError = ""; updateSavedAt();
       clearTimeout(retryTimer);
-      // 書き込み待ちの間にも入力があったなら、未保存のまま残してもう一度保存する
+      // 書き込み待ちの間にも入力があったなら、未保存のまま残す（次に保存ボタンを押した時に書き込まれる）
       state.dirty = (dirtySeq !== seq);
-      if (state.dirty) scheduleAutoSave();
+      updateSaveBtn();
       if (importedOthers) autoRefresh("full");   // 他の人の更新が混ざった時だけ画面に反映（入力中なら入力が終わるまで待つ）
     } catch (e) {
-      // 書き込み失敗：保存済み扱いにしない。理由を画面に出す。同時アクセスが多いと起きやすい一時的な競合を想定し、数秒後に自動で再試行する
-      saving = false; state.saveError = (e && e.message) ? e.message : String(e); updateSavedAt();
-      console.error("[autosave] 保存に失敗:", e);
-      if (force) alert("保存に失敗しました：" + state.saveError);
-      clearTimeout(retryTimer);
-      retryTimer = setTimeout(() => { if (state.dirty) doAutoSave(); }, 4000);
+      // 書き込み失敗：保存済み扱いにしない。理由を画面に出す。
+      saving = false; state.saveError = (e && e.message) ? e.message : String(e); updateSavedAt(); updateSaveBtn();
+      console.error("[save] 保存に失敗:", e);
+      if (force) alert("保存に失敗しました：" + state.saveError + "\n\nもう一度「保存」を押してください。");
     }
   }
   // ---- モーダル ----
@@ -2768,16 +2794,18 @@
     document.addEventListener("focusout", flushAutoRefresh);
     // チェック欄のドラッグ選択：マウスボタンを離したら終了
     document.addEventListener("mouseup", () => { state.dragCheckOn = null; state.crossDragCheckOn = null; document.body.classList.remove("no-usersel"); });
-    // 閉じる直前：未保存があれば保存を発火し、完了保証がないため確認ダイアログで引き止める
+    // 保存は「保存」ボタンとCtrl+Sだけ（入力中に勝手に保存して取りこぼすのを避けるため）
+    $("#saveBtn").addEventListener("click", () => saveNow(true));
+    document.addEventListener("keydown", e => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "s") return;
+      e.preventDefault(); saveNow(true);
+    });
+    // 閉じる直前：未保存があれば確認ダイアログで引き止める（保存せずに閉じると失われるため）
     window.addEventListener("beforeunload", (e) => {
-      flushCrossMonthSaves();
       if (!state.editing) return;
-      if (state.dirty || saving) { doAutoSave(true); e.preventDefault(); e.returnValue = ""; return ""; }
+      if (hasUnsaved() || saving) { e.preventDefault(); e.returnValue = ""; return ""; }
       S.clearLock(state.month);
     });
-    window.addEventListener("blur", () => { if (state.editing) doAutoSave(); flushCrossMonthSaves(); });   // 画面を離れたら即保存
-    // タブを隠す/最小化した瞬間にも保存（beforeunloadより確実に発火する）
-    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { if (state.editing && state.dirty) doAutoSave(); flushCrossMonthSaves(); } });
     if (S.supported) { try { await S.tryRestore(); renderHeader(); } catch (e) {} }
     await renderMonthSelect();
     if (S.isConnected()) {
