@@ -1492,7 +1492,7 @@
     return wrap;
   }
   function rerender() {
-    renderSummary(); renderLockBar(); updateSavedAt(); updateSaveBtn(); updateTitle(); updateSelBar(); updateMailDate(); renderKickoffCard();
+    renderSummary(); renderLockBar(); updateSavedAt(); updateSaveBtn(); updateUndoBtn(); updateTitle(); updateSelBar(); updateMailDate(); renderKickoffCard();
     if (state.tab === "list") renderBody(); else renderScheduleBoard();
   }
   // ===== 入力中の自動再描画を待たせる =====
@@ -2461,6 +2461,7 @@
     state.model.title = window.monthLabel(month) + " DM施策";   // タイトルは対象月から自動
     state.baseline = JSON.parse(JSON.stringify(state.model));   // 保存時3-way mergeの基準点
     state.mtime = mtime; state.editing = false;
+    resetUndo();   // 月をまたいで前の月の内容に戻してしまわないよう、履歴は月ごとに作り直す
     rerender(); startPolling();
     if (sel) sel.disabled = false;
     await enableEditing();
@@ -2477,13 +2478,52 @@
     try { await S.writeLock(state.month, { user: state.user, ts: Date.now() }); } catch (e) {}
     state.editing = true; rerender();
   }
-  // ===== 自動保存（Googleスプレッドシート風：手が止まって少ししたら保存） =====
+  // ===== 元に戻す（Ctrl+Z）=====
+  // 1文字ごとではなく「手が止まるまでの一連の編集」を1回分として覚える。
+  // lastQuiet＝直前に手が止まった時点の内容。新しい編集が始まった瞬間に、それを戻り先として積む。
+  const UNDO_MAX = 30;
+  let undoStack = [], redoStack = [], lastQuiet = null, burstActive = false, quietTimer = null;
+  function snapshotModel() { return state.model ? JSON.parse(JSON.stringify(state.model)) : null; }
+  function resetUndo() { undoStack = []; redoStack = []; burstActive = false; clearTimeout(quietTimer); lastQuiet = snapshotModel(); updateUndoBtn(); }
+  function noteEditForUndo() {
+    if (!state.model) return;
+    if (!burstActive) {
+      if (lastQuiet) { undoStack.push(lastQuiet); if (undoStack.length > UNDO_MAX) undoStack.shift(); redoStack = []; }
+      burstActive = true;
+    }
+    clearTimeout(quietTimer);
+    quietTimer = setTimeout(() => { lastQuiet = snapshotModel(); burstActive = false; }, 600);
+  }
+  function applySnapshot(snap) {
+    syncObjectInPlace(state.model, snap);   // 入力欄が掴んでいる行オブジェクトを生かしたまま中身を戻す
+    clearTimeout(quietTimer); burstActive = false; lastQuiet = snapshotModel();
+    state.dirty = true; dirtySeq++;
+    rerender(); updateUndoBtn();
+  }
+  function undoEdit() {
+    if (!state.editing || !state.model) { blockEdit(); return; }
+    if (!undoStack.length) { flash("これ以上は戻せません"); return; }
+    redoStack.push(snapshotModel());
+    applySnapshot(undoStack.pop());
+    flash("元に戻しました（やり直しは Ctrl+Y）");
+  }
+  function redoEdit() {
+    if (!state.editing || !state.model || !redoStack.length) return;
+    undoStack.push(snapshotModel());
+    applySnapshot(redoStack.pop());
+    flash("やり直しました");
+  }
+  function updateUndoBtn() {
+    const b = $("#undoBtn"); if (!b) return;
+    b.classList.toggle("hidden", !(state.editing && state.model && undoStack.length > 0));
+  }
+  // ===== 保存 =====
   // dirtySeq＝編集のたびに進むカウンタ。共有フォルダへの書き込み待ちの間に打った文字まで
   // 「保存済み」にしてしまうと、その入力が保存されないまま消えてしまうため、保存前後で見比べる
   let dirtySeq = 0;
   // 入力の途中で勝手に保存すると、打っている最中の文字が取りこぼされることがあるため自動保存はやめ、
   // 「保存」ボタン（またはCtrl+S）を押した時だけ共有フォルダへ書き込む
-  function markDirty() { if (!state.editing) return; state.dirty = true; dirtySeq++; updateSaveBtn(); }
+  function markDirty() { if (!state.editing) return; noteEditForUndo(); state.dirty = true; dirtySeq++; updateSaveBtn(); updateUndoBtn(); }
   function hasUnsaved() {
     if (state.dirty) return true;
     return Object.keys(state.crossMonth).some(mo => { const e = state.crossMonth[mo]; return e && e.dirty; });
@@ -2796,9 +2836,17 @@
     document.addEventListener("mouseup", () => { state.dragCheckOn = null; state.crossDragCheckOn = null; document.body.classList.remove("no-usersel"); });
     // 保存は「保存」ボタンとCtrl+Sだけ（入力中に勝手に保存して取りこぼすのを避けるため）
     $("#saveBtn").addEventListener("click", () => saveNow(true));
+    $("#undoBtn").addEventListener("click", undoEdit);
     document.addEventListener("keydown", e => {
-      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "s") return;
-      e.preventDefault(); saveNow(true);
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === "s") { e.preventDefault(); saveNow(true); return; }
+      // 入力欄の中では、その欄の文字を戻すブラウザ本来のCtrl+Zに任せる（欄の外なら編集そのものを1つ戻す）
+      const a = document.activeElement;
+      const inField = a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA");
+      if (inField) return;
+      if (k === "z" && !e.shiftKey) { e.preventDefault(); undoEdit(); return; }
+      if (k === "y" || (k === "z" && e.shiftKey)) { e.preventDefault(); redoEdit(); }
     });
     // 閉じる直前：未保存があれば確認ダイアログで引き止める（保存せずに閉じると失われるため）
     window.addEventListener("beforeunload", (e) => {
